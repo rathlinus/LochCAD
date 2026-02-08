@@ -151,10 +151,10 @@ export const useProjectStore = create<ProjectState>()(
         state.currentView = 'schematic';
         state.isDirty = false;
         // Reset editor states (deferred to avoid circular import)
-        queueMicrotask(() => {
+        queueMicrotask(async () => {
           try {
-            const { resetSchematicEditorState } = require('./schematicStore');
-            const { resetPerfboardEditorState } = require('./perfboardStore');
+            const { resetSchematicEditorState } = await import('./schematicStore');
+            const { resetPerfboardEditorState } = await import('./perfboardStore');
             resetSchematicEditorState();
             resetPerfboardEditorState();
           } catch { /* first load */ }
@@ -172,10 +172,10 @@ export const useProjectStore = create<ProjectState>()(
         // Clear autosave when starting fresh
         try { localStorage.removeItem(STORAGE_KEY); } catch { /* */ }
         // Reset editor states
-        queueMicrotask(() => {
+        queueMicrotask(async () => {
           try {
-            const { resetSchematicEditorState } = require('./schematicStore');
-            const { resetPerfboardEditorState } = require('./perfboardStore');
+            const { resetSchematicEditorState } = await import('./schematicStore');
+            const { resetPerfboardEditorState } = await import('./perfboardStore');
             resetSchematicEditorState();
             resetPerfboardEditorState();
           } catch { /* first load */ }
