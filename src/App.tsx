@@ -1,9 +1,10 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useProjectStore, useSchematicStore, usePerfboardStore } from '@/stores';
 import { useProjectManagerStore } from '@/stores/projectManagerStore';
 import { ToastContainer } from '@/components/Toast';
 import { ProjectManager } from '@/components/ProjectManager';
+import { IntroScreen, shouldShowIntro } from '@/components/IntroScreen';
 
 /** Trigger a file-open dialog and load a .lochcad / .json project */
 function triggerImport() {
@@ -28,6 +29,8 @@ function triggerImport() {
 }
 
 export default function App() {
+  const [showIntro, setShowIntro] = useState(shouldShowIntro);
+
   // Global keyboard handler — suppress browser defaults and wire up app-wide shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -153,6 +156,7 @@ export default function App() {
 
   return (
     <>
+      {showIntro && <IntroScreen onClose={() => setShowIntro(false)} />}
       <AppLayout />
       <ProjectManager />
       <ToastContainer />
