@@ -30,6 +30,13 @@ export default function SchematicEditor() {
   const [selectionBox, setSelectionBox] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [shiftHeld, setShiftHeld] = useState(false);
 
+  // Label placement / edit state (inline input instead of prompt)
+  const [showLabelInput, setShowLabelInput] = useState(false);
+  const [labelInputValue, setLabelInputValue] = useState('');
+  const [labelInputPos, setLabelInputPos] = useState<Point>({ x: 0, y: 0 });
+  const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
+  const labelInputRef = useRef<HTMLInputElement>(null);
+
   const viewport = useSchematicStore((s) => s.viewport);
   const setViewport = useSchematicStore((s) => s.setViewport);
   const activeTool = useSchematicStore((s) => s.activeTool);
@@ -85,10 +92,6 @@ export default function SchematicEditor() {
   const sheetLabels = useMemo(
     () => schematic.labels.filter((l) => l.sheetId === activeSheetId),
     [schematic.labels, activeSheetId]
-  );
-  const sheetBusses = useMemo(
-    () => schematic.busses.filter((b) => b.sheetId === activeSheetId),
-    [schematic.busses, activeSheetId]
   );
 
   // Routing obstacles (full bboxes) + pin corridor allowed cells
@@ -223,7 +226,7 @@ export default function SchematicEditor() {
     const pos = getPointerPos();
     if (pos) {
       // Use pin-snap during wire/bus drawing for precise pin connections
-      const snapped = (isDrawing && (activeTool === 'draw_wire' || activeTool === 'draw_bus'))
+      const snapped = (isDrawing && activeTool === 'draw_wire')
         ? snapWithPins(pos)
         : snap(pos);
       setMousePos(snapped);
@@ -297,7 +300,7 @@ export default function SchematicEditor() {
       return;
     }
 
-    if (activeTool === 'draw_wire' || activeTool === 'draw_bus') {
+    if (activeTool === 'draw_wire') {
       const pinSnapped = snapWithPins(pos);
       if (!isDrawing) {
         useSchematicStore.getState().startDrawing(pinSnapped);
@@ -307,42 +310,11 @@ export default function SchematicEditor() {
       return;
     }
 
-    if (activeTool === 'place_junction') {
-      useSchematicStore.getState().addJunction(snapped, uuid(), activeSheetId);
-      return;
-    }
-
     if (activeTool === 'place_label') {
-      const name = prompt('Label-Name:');
-      if (name) {
-        useSchematicStore.getState().addLabel({
-          text: name,
-          position: snapped,
-          type: 'net',
-          netId: uuid(),
-          rotation: 0,
-          sheetId: activeSheetId,
-        });
-      }
-      return;
-    }
-
-    if (activeTool === 'place_power') {
-      // Place VCC or GND
-      const choice = prompt('Power-Symbol (VCC / GND):');
-      if (choice) {
-        const pwrId = choice.toUpperCase() === 'GND' ? 'power_gnd' : 'power_vcc';
-        useSchematicStore.getState().addComponent({
-          libraryId: pwrId,
-          reference: '#PWR',
-          value: choice.toUpperCase(),
-          position: snapped,
-          rotation: 0,
-          mirror: false,
-          properties: {},
-          sheetId: activeSheetId,
-        });
-      }
+      setLabelInputPos(snapped);
+      setLabelInputValue('');
+      setShowLabelInput(true);
+      setTimeout(() => labelInputRef.current?.focus(), 50);
       return;
     }
 
@@ -386,7 +358,7 @@ export default function SchematicEditor() {
       e.cancelBubble = true;
       useSchematicStore.getState().deleteComponent(compId);
     }
-    // For draw_wire / draw_bus: let click bubble to stage so drawing starts/adds points
+    // For draw_wire: let click bubble to stage so drawing starts/adds points
   }, [activeTool]);
 
   const handleComponentDragEnd = useCallback((compId: string, x: number, y: number): boolean => {
@@ -486,12 +458,14 @@ export default function SchematicEditor() {
       e.cancelBubble = true;
       useSchematicStore.getState().deleteWire(wireId);
     }
-    // For draw_wire / draw_bus: let click bubble to stage so drawing starts/adds points
+    // For draw_wire: let click bubble to stage so drawing starts/adds points
   }, [activeTool]);
 
   // Keyboard shortcuts
   useHotkeys('escape', () => {
-    if (isDrawing) {
+    if (showLabelInput) {
+      setShowLabelInput(false);
+    } else if (isDrawing) {
       useSchematicStore.getState().cancelDrawing();
     } else {
       useSchematicStore.getState().setActiveTool('select');
@@ -501,7 +475,6 @@ export default function SchematicEditor() {
     }
   });
   useHotkeys('w', () => useSchematicStore.getState().setActiveTool('draw_wire'));
-  useHotkeys('b', () => useSchematicStore.getState().setActiveTool('draw_bus'));
   useHotkeys('l', () => useSchematicStore.getState().setActiveTool('place_label'));
   useHotkeys('delete', () => useSchematicStore.getState().deleteSelected());
   useHotkeys('r', () => {
@@ -536,6 +509,41 @@ export default function SchematicEditor() {
     const ids = sheetComponents.map((c) => c.id);
     useSchematicStore.getState().select({ componentIds: ids });
   }, { preventDefault: true, enableOnFormTags: true });
+
+  // --- Commit label placement or edit ---
+  const commitLabel = useCallback(() => {
+    const text = labelInputValue.trim();
+    if (editingLabelId) {
+      // Editing existing label
+      if (text) {
+        useSchematicStore.getState().updateLabel(editingLabelId, { text });
+      }
+    } else {
+      // Placing new label
+      if (text) {
+        useSchematicStore.getState().addLabel({
+          text,
+          position: labelInputPos,
+          type: 'net',
+          netId: uuid(),
+          rotation: 0,
+          sheetId: activeSheetId,
+        });
+      }
+    }
+    setShowLabelInput(false);
+    setLabelInputValue('');
+    setEditingLabelId(null);
+  }, [labelInputValue, labelInputPos, activeSheetId, editingLabelId]);
+
+  // Calculate screen position of the label input
+  const labelScreenPos = useMemo(() => {
+    if (!showLabelInput) return { left: 0, top: 0 };
+    return {
+      left: labelInputPos.x * viewport.scale + viewport.x,
+      top: labelInputPos.y * viewport.scale + viewport.y - 32,
+    };
+  }, [showLabelInput, labelInputPos, viewport]);
 
   return (
     <div ref={containerRef} className="w-full h-full bg-lochcad-bg relative">
@@ -576,18 +584,6 @@ export default function SchematicEditor() {
             />
           ))}
 
-          {/* Busses */}
-          {sheetBusses.map((bus) => (
-            <Line
-              key={bus.id}
-              points={bus.points.flatMap((p) => [p.x, p.y])}
-              stroke={COLORS.bus}
-              strokeWidth={4}
-              lineCap="round"
-              lineJoin="round"
-            />
-          ))}
-
           {/* Drawing preview — Manhattan routed */}
           {isDrawing && drawingPoints.length > 0 && (() => {
             // Committed segments
@@ -596,8 +592,8 @@ export default function SchematicEditor() {
             const previewPts = drawingPreviewPoints
               ? drawingPreviewPoints.flatMap((p) => [p.x, p.y])
               : [drawingPoints[drawingPoints.length - 1].x, drawingPoints[drawingPoints.length - 1].y, mousePos.x, mousePos.y];
-            const wireColor = activeTool === 'draw_bus' ? COLORS.bus : COLORS.wire;
-            const wireWidth = activeTool === 'draw_bus' ? 4 : 2;
+            const wireColor = COLORS.wire;
+            const wireWidth = 2;
             return (
               <>
                 {/* Already committed points */}
@@ -671,7 +667,37 @@ export default function SchematicEditor() {
 
           {/* Labels */}
           {sheetLabels.map((label) => (
-            <Group key={label.id} x={label.position.x} y={label.position.y} rotation={label.rotation}>
+            <Group
+              key={label.id}
+              x={label.position.x}
+              y={label.position.y}
+              rotation={label.rotation}
+              draggable={activeTool === 'select'}
+              onClick={(e: any) => {
+                e.cancelBubble = true;
+                if (activeTool === 'delete') {
+                  useSchematicStore.getState().deleteLabel(label.id);
+                }
+              }}
+              onDragEnd={(e: any) => {
+                const snapped = snap({ x: e.target.x(), y: e.target.y() });
+                e.target.x(snapped.x);
+                e.target.y(snapped.y);
+                useSchematicStore.getState().updateLabel(label.id, { position: snapped });
+              }}
+              onDblClick={(e: any) => {
+                e.cancelBubble = true;
+                setEditingLabelId(label.id);
+                setLabelInputValue(label.text);
+                setLabelInputPos(label.position);
+                setShowLabelInput(true);
+                setTimeout(() => {
+                  labelInputRef.current?.focus();
+                  labelInputRef.current?.select();
+                }, 50);
+              }}
+              cursor={activeTool === 'delete' ? 'pointer' : activeTool === 'select' ? 'move' : 'default'}
+            >
               <Rect
                 x={-2}
                 y={-12}
@@ -792,12 +818,35 @@ export default function SchematicEditor() {
       <div className="absolute bottom-2 left-2 text-[10px] text-lochcad-text-dim bg-lochcad-bg/80 px-2 py-1 rounded">
         {activeTool === 'select' && 'Klick: Auswählen | Rechtsklick/Strg+R: Drehen | Scroll: Zoom'}
         {activeTool === 'draw_wire' && 'Klick: Punkt setzen (Manhattan) | Doppelklick: Beenden | Esc: Abbrechen'}
-        {activeTool === 'draw_bus' && 'Klick: Punkt setzen | Doppelklick: Beenden | Esc: Abbrechen'}
         {activeTool === 'place_component' && 'Klick: Platzieren | Rechtsklick/R/Strg+R: Drehen | X: Spiegeln | Esc: Abbrechen'}
-        {activeTool === 'place_label' && 'Klick: Label platzieren'}
-        {activeTool === 'place_junction' && 'Klick: Knotenpunkt setzen'}
+        {activeTool === 'place_label' && 'Klick: Label platzieren — Name eingeben & Enter drücken'}
         {activeTool === 'delete' && 'Klick auf Element: Löschen'}
       </div>
+
+      {/* Floating label input */}
+      {showLabelInput && (
+        <div
+          className="absolute z-50 flex items-center gap-1.5"
+          style={{ left: labelScreenPos.left, top: labelScreenPos.top }}
+        >
+          <input
+            ref={labelInputRef}
+            className="bg-lochcad-surface border border-lochcad-accent rounded px-2 py-1 text-xs text-lochcad-text outline-none focus:ring-1 focus:ring-lochcad-accent shadow-lg w-36"
+            placeholder="Label-Name…"
+            value={labelInputValue}
+            onChange={(e) => setLabelInputValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); commitLabel(); }
+              if (e.key === 'Escape') { e.preventDefault(); setShowLabelInput(false); }
+              e.stopPropagation();
+            }}
+            onBlur={() => commitLabel()}
+          />
+          <span className="text-[9px] text-lochcad-text-dim bg-lochcad-bg/80 px-1.5 py-0.5 rounded">
+            Enter ↵
+          </span>
+        </div>
+      )}
     </div>
   );
 }

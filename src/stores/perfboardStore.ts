@@ -19,6 +19,9 @@ import { useProjectStore } from './projectStore';
 import { PERFBOARD_GRID } from '@/constants';
 import { getBuiltInComponents, getAdjustedFootprint } from '@/lib/component-library';
 import { findManhattanRoute, getOccupiedHoles, getConnectionOccupiedHoles, solderBridgeCrossesExisting, gridKey, hasCollision, hasFootprintCollision, isAdjacent, insertSupportPoints } from '@/lib/engine/router';
+import { autoLayout } from '@/lib/engine/auto-layout';
+import type { AutoLayoutMode } from '@/lib/engine/auto-layout';
+import { autoRoute } from '@/lib/engine/autorouter';
 import { useToastStore } from './toastStore';
 
 interface PerfboardState {
@@ -66,6 +69,11 @@ interface PerfboardState {
 
   // Delete selected
   deleteSelected: () => void;
+
+  // Auto-layout & autorouter
+  autoLayoutComponents: (mode?: AutoLayoutMode) => void;
+  autoRouteConnections: () => void;
+  removeAllConnections: () => void;
 
   // Undo/Redo (snapshot-based)
   undo: () => void;
@@ -448,6 +456,127 @@ export const usePerfboardStore = create<PerfboardState>()(
         p.trackCuts = p.trackCuts.filter((t) => !ids.includes(t.id));
       });
       set((state) => { state.selectedIds = []; });
+    },
+
+    // ---- Remove all connections ----
+    removeAllConnections: () => {
+      const perfboard = useProjectStore.getState().project.perfboard;
+      if (perfboard.connections.length === 0) {
+        useToastStore.getState().showToast('Keine Verbindungen vorhanden', 'warning');
+        return;
+      }
+      get().pushSnapshot();
+      const count = perfboard.connections.length;
+      mutatePerfboard((p) => {
+        p.connections = [];
+      });
+      useToastStore.getState().showToast(`${count} Verbindungen entfernt`, 'success');
+    },
+
+    // ---- Auto-Layout ----
+    autoLayoutComponents: (mode?: AutoLayoutMode) => {
+      const perfboard = useProjectStore.getState().project.perfboard;
+      const schematic = useProjectStore.getState().project.schematic;
+      const customComps = useProjectStore.getState().project.componentLibrary;
+      const allLib = [...getBuiltInComponents(), ...customComps];
+
+      if (perfboard.components.length === 0) {
+        useToastStore.getState().showToast('Keine Bauteile zum Platzieren vorhanden', 'warning');
+        return;
+      }
+
+      get().pushSnapshot();
+
+      // Clear all existing connections before re-layout
+      mutatePerfboard((p) => {
+        p.connections = [];
+      });
+
+      const layoutMode = mode ?? 'easy_soldering';
+
+      // Re-read perfboard after clearing connections
+      const freshPerfboard = useProjectStore.getState().project.perfboard;
+
+      const result = autoLayout(freshPerfboard, schematic, allLib, {
+        boardWidth: freshPerfboard.width,
+        boardHeight: freshPerfboard.height,
+        mode: layoutMode,
+      });
+
+      if (result.placed > 0) {
+        mutatePerfboard((p) => {
+          for (const comp of p.components) {
+            const newPos = result.positions.get(comp.id);
+            if (newPos) {
+              comp.gridPosition = newPos;
+            }
+          }
+        });
+      }
+
+      if (result.failed > 0) {
+        useToastStore.getState().showToast(
+          `Auto-Layout: ${result.placed} platziert, ${result.failed} fehlgeschlagen (Board zu klein?)`,
+          'warning',
+        );
+      } else {
+        useToastStore.getState().showToast(
+          `Auto-Layout: ${result.placed} Bauteile platziert`,
+          'success',
+        );
+      }
+    },
+
+    // ---- Autorouter ----
+    autoRouteConnections: () => {
+      const perfboard = useProjectStore.getState().project.perfboard;
+      const schematic = useProjectStore.getState().project.schematic;
+      const customComps = useProjectStore.getState().project.componentLibrary;
+      const allLib = [...getBuiltInComponents(), ...customComps];
+
+      if (perfboard.components.length === 0) {
+        useToastStore.getState().showToast('Keine Bauteile vorhanden — zuerst synchronisieren', 'warning');
+        return;
+      }
+
+      get().pushSnapshot();
+
+      // Clear all existing connections before re-routing
+      mutatePerfboard((p) => {
+        p.connections = [];
+      });
+
+      // Re-read perfboard after clearing
+      const freshPerfboard = useProjectStore.getState().project.perfboard;
+
+      const result = autoRoute(freshPerfboard, schematic, allLib, {
+        boardWidth: freshPerfboard.width,
+        boardHeight: freshPerfboard.height,
+        connectionType: 'wire',
+        connectionSide: 'bottom',
+        clearExisting: false,
+        maxPasses: 3,
+      });
+
+      if (result.connections.length > 0) {
+        mutatePerfboard((p) => {
+          p.connections.push(...result.connections);
+        });
+      }
+
+      if (result.failed > 0) {
+        useToastStore.getState().showToast(
+          `Autorouter: ${result.routed} Netze geroutet, ${result.failed} fehlgeschlagen (${result.failedNets.join(', ')})`,
+          'warning',
+        );
+      } else if (result.routed === 0) {
+        useToastStore.getState().showToast('Autorouter: Alle Netze bereits verbunden', 'success');
+      } else {
+        useToastStore.getState().showToast(
+          `Autorouter: ${result.routed} Netze erfolgreich geroutet`,
+          'success',
+        );
+      }
     },
 
     // ---- Undo / Redo ----

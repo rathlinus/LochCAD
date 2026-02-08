@@ -46,13 +46,7 @@ export type ToolType =
   | 'select'
   | 'place_component'
   | 'draw_wire'
-  | 'draw_bus'
   | 'place_label'
-  | 'place_junction'
-  | 'place_bus_entry'
-  | 'place_power'
-  | 'place_sheet_pin'
-  | 'place_hierarchical_sheet'
   | 'measure'
   | 'delete';
 
@@ -503,7 +497,8 @@ export type ERCViolationType =
   | 'unconnected_wire'
   | 'floating_wire'
   | 'duplicate_reference'
-  | 'missing_value';
+  | 'missing_value'
+  | 'short_circuit';
 
 export type DRCViolationType =
   | 'overlapping_components'

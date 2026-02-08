@@ -1060,16 +1060,6 @@ export const useSchematicStore = create<SchematicState>()(
               });
             });
           }
-        } else if (state.activeTool === 'draw_bus') {
-          mutateSchematic((s) => {
-            s.busses.push({
-              id: uuid(),
-              name: 'BUS',
-              points: [...state.drawingPoints],
-              members: [],
-              sheetId,
-            });
-          });
         }
       }
       set((s) => {

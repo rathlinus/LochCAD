@@ -11,3 +11,7 @@ export { findManhattanRoute, getOccupiedHoles, hasCollision, gridKey, hasFootpri
 export type { GridBBox } from './router';
 export { routeSchematicWire, getComponentBBox, getComponentBodyBBox, bboxOverlap, buildOccupiedEdges, addWireEdges, wirePassesThroughBBox, findSameNetWireIds, buildRoutingContext, getWireEdgeSet } from './schematic-router';
 export type { BBox } from './schematic-router';
+export { autoLayout } from './auto-layout';
+export type { AutoLayoutOptions, AutoLayoutResult, AutoLayoutMode } from './auto-layout';
+export { autoRoute } from './autorouter';
+export type { AutorouteOptions, AutorouteResult } from './autorouter';

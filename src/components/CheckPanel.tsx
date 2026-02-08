@@ -35,23 +35,23 @@ const SEVERITY_BG: Record<string, string> = {
 
 const TYPE_LABELS: Record<string, string> = {
   // ERC
-  unconnected_pin: 'Unconnected Pin',
-  multiple_drivers: 'Multiple Drivers',
-  no_driver: 'No Driver',
-  no_power_source: 'No Power Source',
-  conflicting_pin_types: 'Pin Type Conflict',
-  unconnected_wire: 'Unconnected Wire',
-  floating_wire: 'Floating Wire',
-  duplicate_reference: 'Duplicate Reference',
-  missing_value: 'Missing Value',
+  unconnected_pin: 'Nicht verbundener Pin',
+  multiple_drivers: 'Mehrere Treiber',
+  no_driver: 'Kein Treiber',
+  no_power_source: 'Keine Stromquelle',
+  conflicting_pin_types: 'Pin-Typ-Konflikt',
+  unconnected_wire: 'Nicht verbundener Draht',
+  floating_wire: 'Loses Drahtende',
+  duplicate_reference: 'Doppeltes Kennzeichen',
+  missing_value: 'Fehlender Wert',
+  short_circuit: 'Kurzschluss',
   // DRC
-  overlapping_components: 'Overlapping Components',
-  out_of_bounds: 'Out of Bounds',
-  unconnected_net: 'Unconnected Net',
-  short_circuit: 'Short Circuit',
-  missing_track_cut: 'Missing Track Cut',
-  crowded_strip: 'Crowded Strip',
-  connection_out_of_bounds: 'Connection Out of Bounds',
+  overlapping_components: 'Überlappende Bauteile',
+  out_of_bounds: 'Außerhalb der Grenzen',
+  unconnected_net: 'Nicht verbundenes Netz',
+  missing_track_cut: 'Fehlender Leiterbahn-Schnitt',
+  crowded_strip: 'Überfüllte Leiterbahn',
+  connection_out_of_bounds: 'Verbindung außerhalb',
 };
 
 function ViolationItem({

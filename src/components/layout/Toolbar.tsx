@@ -3,16 +3,14 @@ import { useProjectStore, useSchematicStore, usePerfboardStore, useCheckStore } 
 import { useToastStore } from '@/stores';
 import type { SyncResult } from '@/stores/projectStore';
 import type { ToolType, PerfboardToolType } from '@/types';
+import type { AutoLayoutMode } from '@/lib/engine/auto-layout';
 import {
   MousePointer2,
   Minus,
   Component,
   Type,
   Circle,
-  GitBranch,
   ArrowRightLeft,
-  FileInput,
-  Layers,
   Trash2,
   Ruler,
   Undo2,
@@ -29,6 +27,10 @@ import {
   AlertTriangle,
   CheckCircle2,
   MoreHorizontal,
+  LayoutGrid,
+  Cable,
+  ChevronDown,
+  Eraser,
 } from 'lucide-react';
 import { runERC } from '@/lib/engine/erc';
 import { runDRC } from '@/lib/engine/drc';
@@ -46,12 +48,7 @@ const schematicTools: ToolDef[] = [
   { id: 'select', label: 'Auswahl', icon: <MousePointer2 size={18} />, shortcut: 'Esc', group: 'cursor' },
   { id: 'place_component', label: 'Bauteil', icon: <Component size={18} />, shortcut: '', group: 'place' },
   { id: 'draw_wire', label: 'Draht', icon: <Minus size={18} />, shortcut: 'W', group: 'wire' },
-  { id: 'draw_bus', label: 'Bus', icon: <GitBranch size={18} />, shortcut: 'B', group: 'wire' },
   { id: 'place_label', label: 'Label', icon: <Type size={18} />, shortcut: 'L', group: 'annotation' },
-  { id: 'place_junction', label: 'Knoten', icon: <Circle size={18} />, group: 'annotation' },
-  { id: 'place_bus_entry', label: 'Bus-Abzw.', icon: <ArrowRightLeft size={18} />, group: 'annotation' },
-  { id: 'place_power', label: 'Power', icon: <FileInput size={18} />, group: 'annotation' },
-  { id: 'place_hierarchical_sheet', label: 'Sub-Sheet', icon: <Layers size={18} />, group: 'hierarchy' },
   { id: 'delete', label: 'Löschen', icon: <Trash2 size={18} />, shortcut: 'Del', group: 'edit' },
 ];
 
@@ -143,6 +140,18 @@ export function Toolbar() {
     useCheckStore.getState().runDRCCheck();
   }, []);
 
+  const handleAutoLayout = useCallback((mode?: AutoLayoutMode) => {
+    usePerfboardStore.getState().autoLayoutComponents(mode);
+  }, []);
+
+  const handleAutoRoute = useCallback(() => {
+    usePerfboardStore.getState().autoRouteConnections();
+  }, []);
+
+  const handleRemoveAllConnections = useCallback(() => {
+    usePerfboardStore.getState().removeAllConnections();
+  }, []);
+
   if (currentView === 'preview3d' || currentView === 'component-editor') return null;
 
   return (
@@ -166,6 +175,9 @@ export function Toolbar() {
       setSyncResult={setSyncResult}
       syncDirection={syncDirection}
       setSyncDirection={setSyncDirection}
+      handleAutoLayout={handleAutoLayout}
+      handleAutoRoute={handleAutoRoute}
+      handleRemoveAllConnections={handleRemoveAllConnections}
     />
   );
 }
@@ -192,6 +204,9 @@ interface ToolbarOverflowProps {
   setSyncResult: React.Dispatch<React.SetStateAction<SyncResult | null>>;
   syncDirection: 'sch2pb' | 'pb2sch' | null;
   setSyncDirection: React.Dispatch<React.SetStateAction<'sch2pb' | 'pb2sch' | null>>;
+  handleAutoLayout: (mode?: AutoLayoutMode) => void;
+  handleAutoRoute: () => void;
+  handleRemoveAllConnections: () => void;
 }
 
 function ToolbarOverflow({
@@ -199,6 +214,7 @@ function ToolbarOverflow({
   undo, redo, handleRotateSelected, handleMirrorSelected,
   viewport, setViewport, handleRunERC, handleRunDRC,
   syncPopup, setSyncPopup, syncResult, setSyncResult, syncDirection, setSyncDirection,
+  handleAutoLayout, handleAutoRoute, handleRemoveAllConnections,
 }: ToolbarOverflowProps) {
   const toolbarRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
@@ -359,8 +375,23 @@ function ToolbarOverflow({
       ),
     });
 
+    // Section 4: Auto-Layout & Autorouter (perfboard only)
+    if (isPerfboard) {
+      s.push({
+        key: 'auto',
+        render: (inDropdown) => (
+          <AutoToolsSection
+            inDropdown={!!inDropdown}
+            handleAutoLayout={handleAutoLayout}
+            handleAutoRoute={handleAutoRoute}
+            handleRemoveAllConnections={handleRemoveAllConnections}
+          />
+        ),
+      });
+    }
+
     return s;
-  }, [grouped, activeTool, setTool, undo, redo, handleRotateSelected, handleMirrorSelected, isSchematic, isPerfboard, viewport.scale, setViewport, handleRunERC, handleRunDRC]);
+  }, [grouped, activeTool, setTool, undo, redo, handleRotateSelected, handleMirrorSelected, isSchematic, isPerfboard, viewport.scale, setViewport, handleRunERC, handleRunDRC, handleAutoLayout, handleAutoRoute, handleRemoveAllConnections]);
 
   const visibleSections = sections.slice(0, visibleCount);
   const overflowSections = sections.slice(visibleCount);
@@ -408,7 +439,7 @@ function ToolbarOverflow({
                 <React.Fragment key={sec.key}>
                   {i > 0 && <div className="h-px bg-lochcad-panel/30 my-1" />}
                   <div className="text-[9px] text-gray-500 uppercase tracking-wider px-1.5 py-0.5 select-none">
-                    {sec.key === 'tools' ? 'Tools' : sec.key === 'edit' ? 'Edit' : sec.key === 'zoom' ? 'Zoom' : sec.key === 'check' ? 'Check' : sec.key}
+                    {sec.key === 'tools' ? 'Tools' : sec.key === 'edit' ? 'Edit' : sec.key === 'zoom' ? 'Zoom' : sec.key === 'check' ? 'Check' : sec.key === 'auto' ? 'Auto' : sec.key}
                   </div>
                   {sec.render(true)}
                 </React.Fragment>
@@ -512,6 +543,100 @@ function ToolbarOverflow({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ======== Auto-Layout / Autorouter section with mode dropdown ========
+
+const LAYOUT_MODES: { id: AutoLayoutMode; label: string; desc: string }[] = [
+  { id: 'compact', label: 'Extra Kompakt', desc: 'Minimaler Platzbedarf — so dicht wie möglich' },
+  { id: 'easy_soldering', label: 'Einfaches Löten', desc: 'Mehr Abstand für bequemes Handlöten' },
+  { id: 'beautiful', label: 'Schönes Board', desc: 'Ausgerichtete Reihen, symmetrisches Layout' },
+];
+
+function AutoToolsSection({
+  inDropdown,
+  handleAutoLayout,
+  handleAutoRoute,
+  handleRemoveAllConnections,
+}: {
+  inDropdown: boolean;
+  handleAutoLayout: (mode?: AutoLayoutMode) => void;
+  handleAutoRoute: () => void;
+  handleRemoveAllConnections: () => void;
+}) {
+  const [layoutOpen, setLayoutOpen] = useState(false);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!layoutOpen) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('[data-layout-menu]')) setLayoutOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [layoutOpen]);
+
+  return (
+    <div className={inDropdown ? 'flex flex-wrap gap-0.5 p-1' : 'flex items-center gap-0.5'}>
+      {/* Layout button with mode dropdown */}
+      <div className="relative" data-layout-menu>
+        <button
+          className="btn-icon flex items-center gap-0.5 px-2"
+          onClick={() => setLayoutOpen(!layoutOpen)}
+          data-tooltip="Auto-Layout — Bauteile automatisch platzieren"
+        >
+          <LayoutGrid size={15} />
+          <span className="text-[10px]">Layout</span>
+          <ChevronDown size={10} className="opacity-60" />
+        </button>
+
+        {layoutOpen && (
+          <div
+            className="absolute top-full left-0 mt-1 z-[9999] bg-lochcad-surface border border-lochcad-panel/50 rounded-lg shadow-xl p-1.5 min-w-[220px]"
+            data-layout-menu
+          >
+            <div className="text-[9px] text-gray-500 uppercase tracking-wider px-2 py-1 select-none">
+              Layout-Modus
+            </div>
+            {LAYOUT_MODES.map((mode) => (
+              <button
+                key={mode.id}
+                className="w-full flex flex-col items-start px-2.5 py-1.5 rounded hover:bg-lochcad-accent/20 transition-colors text-left"
+                onClick={() => {
+                  handleAutoLayout(mode.id);
+                  setLayoutOpen(false);
+                }}
+              >
+                <span className="text-xs text-gray-200 font-medium">{mode.label}</span>
+                <span className="text-[10px] text-gray-500 leading-tight">{mode.desc}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Route button */}
+      <button
+        className="btn-icon flex items-center gap-1 px-2"
+        onClick={handleAutoRoute}
+        data-tooltip="Autorouter — Alle Netze automatisch verdrahten"
+      >
+        <Cable size={15} />
+        <span className="text-[10px]">Route</span>
+      </button>
+
+      {/* Remove all traces button */}
+      <button
+        className="btn-icon flex items-center gap-1 px-2 text-red-400 hover:text-red-300"
+        onClick={handleRemoveAllConnections}
+        data-tooltip="Alle Verbindungen entfernen"
+      >
+        <Eraser size={15} />
+        <span className="text-[10px]">Clear</span>
+      </button>
     </div>
   );
 }

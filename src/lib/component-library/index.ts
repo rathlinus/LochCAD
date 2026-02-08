@@ -943,6 +943,33 @@ function createICs(): ComponentDefinition[] {
 function createConnectors(): ComponentDefinition[] {
   return [
     {
+      id: 'pin_header_1',
+      name: 'Pin Header 1-polig',
+      category: 'Connectors',
+      description: '1-Pin Header / Testpunkt, 2.54mm',
+      keywords: ['header', 'pin', 'connector', 'testpoint', '1-pin', 'J'],
+      symbol: {
+        graphics: [
+          { type: 'circle', center: { x: 0, y: 0 }, radius: 6, stroke: '#2176B7', strokeWidth: 2 },
+        ],
+        pins: [
+          { number: '1', name: '1', position: { x: -40, y: 0 }, length: 34, direction: 0, electricalType: 'passive' },
+        ],
+      },
+      footprint: {
+        type: 'through_hole',
+        pads: [
+          { number: '1', gridPosition: { col: 0, row: 0 }, shape: 'circle' },
+        ],
+        silkscreen: [],
+        spanHoles: { col: 1, row: 1 },
+      },
+      model3d: { type: 'parametric', shape: 'pin_header', params: { pins: 1, rows: 1 } },
+      pinMapping: { '1': '1' },
+      defaultProperties: { value: 'Conn_1' },
+      isBuiltIn: true,
+    },
+    {
       id: 'pin_header_2',
       name: 'Pin Header 2-polig',
       category: 'Connectors',
