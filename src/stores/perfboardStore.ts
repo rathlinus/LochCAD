@@ -510,6 +510,10 @@ export const usePerfboardStore = create<PerfboardState>()(
             if (newPos) {
               comp.gridPosition = newPos;
             }
+            const newRot = result.rotations.get(comp.id);
+            if (newRot !== undefined) {
+              comp.rotation = newRot;
+            }
           }
         });
       }

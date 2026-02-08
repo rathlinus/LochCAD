@@ -550,9 +550,10 @@ function ToolbarOverflow({
 // ======== Auto-Layout / Autorouter section with mode dropdown ========
 
 const LAYOUT_MODES: { id: AutoLayoutMode; label: string; desc: string }[] = [
-  { id: 'compact', label: 'Extra Kompakt', desc: 'Minimaler Platzbedarf — so dicht wie möglich' },
+  { id: 'extra_compact', label: 'Extra Kompakt', desc: 'Absolut minimaler Platzbedarf — so dicht wie möglich' },
+  { id: 'compact', label: 'Kompakt', desc: 'Wenig Platz, aber mit Routing-Kanal' },
   { id: 'easy_soldering', label: 'Einfaches Löten', desc: 'Mehr Abstand für bequemes Handlöten' },
-  { id: 'beautiful', label: 'Schönes Board', desc: 'Ausgerichtete Reihen, symmetrisches Layout' },
+  { id: 'beautiful', label: 'Schönes Board', desc: 'Ästhetisch ausgerichtete Reihen, symmetrisches Layout' },
 ];
 
 function AutoToolsSection({
