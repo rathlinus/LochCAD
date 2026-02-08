@@ -6,6 +6,7 @@ import { Sidebar } from '../sidebar/Sidebar';
 import { PropertiesPanel } from '../properties/PropertiesPanel';
 import { SheetTabs } from './SheetTabs';
 import { StatusBar } from './StatusBar';
+import { CheckPanel } from '../CheckPanel';
 
 const SchematicEditor = lazy(() => import('@/features/schematic-editor/SchematicEditor'));
 const PerfboardEditor = lazy(() => import('@/features/perfboard-editor/PerfboardEditor'));
@@ -52,6 +53,9 @@ export function AppLayout() {
 
         {/* Right Panel — Properties */}
         <PropertiesPanel />
+
+        {/* Check Panel — DRC / ERC results */}
+        <CheckPanel />
       </div>
 
       {/* Status Bar */}

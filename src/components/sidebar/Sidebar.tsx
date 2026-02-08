@@ -1,15 +1,53 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useProjectStore, useSchematicStore, usePerfboardStore } from '@/stores';
 import { getBuiltInComponents } from '@/lib/component-library';
 import type { ComponentDefinition, ComponentCategory } from '@/types';
 import { COMPONENT_CATEGORIES } from '@/constants';
+import { ProjectNotes } from '../ProjectNotes';
 import {
   ChevronRight,
   ChevronDown,
   Search,
   Package,
   Layers,
+  X,
 } from 'lucide-react';
+
+// Match helper: every search token must appear in at least one searchable field
+function matchesSearch(comp: ComponentDefinition, tokens: string[]): boolean {
+  if (tokens.length === 0) return true;
+  const haystack = [
+    comp.name,
+    comp.id,
+    comp.category,
+    comp.prefix ?? '',
+    comp.description ?? '',
+    ...(comp.keywords ?? []),
+  ]
+    .join(' ')
+    .toLowerCase();
+  return tokens.every((t) => haystack.includes(t));
+}
+
+// Highlight matching text
+function Highlight({ text, tokens }: { text: string; tokens: string[] }) {
+  if (tokens.length === 0) return <>{text}</>;
+  // Build regex from tokens
+  const escaped = tokens.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const regex = new RegExp(`(${escaped.join('|')})`, 'gi');
+  const parts = text.split(regex);
+  return (
+    <>
+      {parts.map((part, i) =>
+        regex.test(part) ? (
+          <span key={i} className="text-lochcad-accent font-semibold">{part}</span>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </>
+  );
+}
 
 export function Sidebar() {
   const currentView = useProjectStore((s) => s.currentView);
@@ -17,31 +55,44 @@ export function Sidebar() {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['Resistors', 'Capacitors']));
   const [activeTab, setActiveTab] = useState<'library' | 'project'>('library');
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const builtIn = useMemo(() => getBuiltInComponents(), []);
   const allComponents = useMemo(() => [...builtIn, ...customComponents], [builtIn, customComponents]);
 
+  const searchTokens = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return q ? q.split(/\s+/) : [];
+  }, [searchQuery]);
+
+  const isSearching = searchTokens.length > 0;
+
   const filteredComponents = useMemo(() => {
-    if (!searchQuery.trim()) return allComponents;
-    const q = searchQuery.toLowerCase();
-    return allComponents.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        c.category.toLowerCase().includes(q) ||
-        c.keywords?.some((k) => k.toLowerCase().includes(q))
-    );
-  }, [allComponents, searchQuery]);
+    if (!isSearching) return allComponents;
+    return allComponents.filter((c) => matchesSearch(c, searchTokens));
+  }, [allComponents, searchTokens, isSearching]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, ComponentDefinition[]>();
-    for (const cat of COMPONENT_CATEGORIES) {
+    // Use the known order first, then append any extra categories found in components
+    const knownCats: string[] = [...COMPONENT_CATEGORIES];
+    const allCats = new Set(filteredComponents.map((c) => c.category));
+    const orderedCats = [...knownCats, ...Array.from(allCats).filter((c) => !knownCats.includes(c))];
+    for (const cat of orderedCats) {
       const items = filteredComponents.filter((c) => c.category === cat);
       if (items.length > 0) map.set(cat, items);
     }
     return map;
   }, [filteredComponents]);
 
+  // Auto-expand all categories when searching
+  const effectiveExpanded = useMemo(() => {
+    if (isSearching) return new Set(Array.from(grouped.keys()));
+    return expandedCategories;
+  }, [isSearching, grouped, expandedCategories]);
+
   const toggleCategory = (cat: string) => {
+    if (isSearching) return; // don't toggle while searching
     setExpandedCategories((prev) => {
       const next = new Set(prev);
       if (next.has(cat)) next.delete(cat);
@@ -49,6 +100,21 @@ export function Sidebar() {
       return next;
     });
   };
+
+  // Keyboard shortcut: focus search with Ctrl+F when sidebar is visible
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === 'f' && activeTab === 'library') {
+        // Only if not in an input already
+        if (document.activeElement?.tagName !== 'INPUT') {
+          e.preventDefault();
+          searchRef.current?.focus();
+        }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [activeTab]);
 
   const handlePlaceComponent = (comp: ComponentDefinition) => {
     if (currentView === 'schematic') {
@@ -103,58 +169,106 @@ export function Sidebar() {
             <div className="relative">
               <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-lochcad-text-dim" />
               <input
-                className="input w-full pl-7 text-xs"
-                placeholder="Bauteil suchen..."
+                ref={searchRef}
+                className="input w-full pl-7 pr-7 text-xs"
+                placeholder="Suche: Name, Kategorie, Wert..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
+              {searchQuery && (
+                <button
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-lochcad-text-dim hover:text-lochcad-text p-0.5 rounded transition-colors"
+                  onClick={() => { setSearchQuery(''); searchRef.current?.focus(); }}
+                >
+                  <X size={12} />
+                </button>
+              )}
             </div>
+            {isSearching && (
+              <div className="text-[10px] text-lochcad-text-dim mt-1 px-0.5">
+                {filteredComponents.length} Treffer
+              </div>
+            )}
           </div>
 
-          {/* Component Tree */}
+          {/* Component Tree / Flat Results */}
           <div className="flex-1 overflow-y-auto pb-2">
-            {Array.from(grouped.entries()).map(([category, components]) => (
-              <div key={category}>
-                <button
-                  className="w-full flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-lochcad-text-dim hover:text-lochcad-text hover:bg-lochcad-panel/10 transition-colors"
-                  onClick={() => toggleCategory(category)}
-                >
-                  {expandedCategories.has(category) ? (
-                    <ChevronDown size={12} />
-                  ) : (
-                    <ChevronRight size={12} />
-                  )}
-                  {category}
-                  <span className="ml-auto text-[10px] text-lochcad-text-dim/60">{components.length}</span>
-                </button>
-                {expandedCategories.has(category) && (
-                  <div className="ml-2">
-                    {components.map((comp) => (
-                      <button
-                        key={comp.id}
-                        className="w-full text-left px-3 py-1 text-xs text-lochcad-text-dim hover:text-lochcad-text hover:bg-lochcad-accent/10 rounded-sm transition-colors cursor-grab active:cursor-grabbing"
-                        onClick={() => handlePlaceComponent(comp)}
-                        title={comp.description}
-                      >
-                        {comp.name}
-                      </button>
-                    ))}
+            {isSearching ? (
+              /* Flat result list when searching — faster to scan */
+              filteredComponents.length > 0 ? (
+                filteredComponents.map((comp) => (
+                  <button
+                    key={comp.id}
+                    className="w-full text-left px-3 py-1.5 text-xs hover:bg-lochcad-accent/10 rounded-sm transition-colors cursor-grab active:cursor-grabbing group"
+                    onClick={() => handlePlaceComponent(comp)}
+                    title={comp.description}
+                  >
+                    <div className="text-lochcad-text">
+                      <Highlight text={comp.name} tokens={searchTokens} />
+                    </div>
+                    <div className="text-[10px] text-lochcad-text-dim/70 leading-tight">
+                      <Highlight text={comp.category} tokens={searchTokens} />
+                      {comp.description && (
+                        <> · <Highlight text={comp.description} tokens={searchTokens} /></>
+                      )}
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <div className="px-3 py-4 text-xs text-lochcad-text-dim text-center">
+                  Keine Bauteile gefunden
+                </div>
+              )
+            ) : (
+              /* Category tree when not searching */
+              <>
+                {Array.from(grouped.entries()).map(([category, components]) => (
+                  <div key={category}>
+                    <button
+                      className="w-full flex items-center gap-1 px-2 py-1.5 text-xs font-medium text-lochcad-text-dim hover:text-lochcad-text hover:bg-lochcad-panel/10 transition-colors"
+                      onClick={() => toggleCategory(category)}
+                    >
+                      {effectiveExpanded.has(category) ? (
+                        <ChevronDown size={12} />
+                      ) : (
+                        <ChevronRight size={12} />
+                      )}
+                      {category}
+                      <span className="ml-auto text-[10px] text-lochcad-text-dim/60">{components.length}</span>
+                    </button>
+                    {effectiveExpanded.has(category) && (
+                      <div className="ml-2">
+                        {components.map((comp) => (
+                          <button
+                            key={comp.id}
+                            className="w-full text-left px-3 py-1 text-xs text-lochcad-text-dim hover:text-lochcad-text hover:bg-lochcad-accent/10 rounded-sm transition-colors cursor-grab active:cursor-grabbing"
+                            onClick={() => handlePlaceComponent(comp)}
+                            title={comp.description ?? comp.name}
+                          >
+                            {comp.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {grouped.size === 0 && (
+                  <div className="px-3 py-4 text-xs text-lochcad-text-dim text-center">
+                    Keine Bauteile gefunden
                   </div>
                 )}
-              </div>
-            ))}
-            {grouped.size === 0 && (
-              <div className="px-3 py-4 text-xs text-lochcad-text-dim text-center">
-                Keine Bauteile gefunden
-              </div>
+              </>
             )}
           </div>
         </>
       )}
 
       {activeTab === 'project' && (
-        <div className="flex-1 overflow-y-auto p-2">
-          <ProjectTreeView />
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-2">
+            <ProjectTreeView />
+          </div>
+          <ProjectNotes />
         </div>
       )}
     </div>

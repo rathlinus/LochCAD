@@ -7,6 +7,8 @@ import { immer } from 'zustand/middleware/immer';
 import { v4 as uuid } from 'uuid';
 import type {
   Project,
+  ProjectNote,
+  ProjectListEntry,
   SchematicDocument,
   PerfboardDocument,
   Netlist,
@@ -47,7 +49,11 @@ function createEmptyProject(name: string = 'Neues Projekt'): Project {
   return {
     id: uuid(),
     name,
+    description: '',
     version: '1.0.0',
+    author: '',
+    tags: [],
+    notes: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     schematic: createEmptySchematic(),
@@ -62,6 +68,7 @@ function createEmptyProject(name: string = 'Neues Projekt'): Project {
 
 const STORAGE_KEY = 'lochcad-autosave';
 const AUTOSAVE_DELAY = 1500; // ms debounce
+const LAST_PROJECT_KEY = 'lochcad-last-project-id';
 
 function loadFromLocalStorage(): Project | null {
   try {
@@ -69,7 +76,14 @@ function loadFromLocalStorage(): Project | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     // Basic sanity check
-    if (parsed && parsed.schematic && parsed.perfboard) return parsed as Project;
+    if (parsed && parsed.schematic && parsed.perfboard) {
+      // Ensure new fields exist
+      if (!parsed.description) parsed.description = '';
+      if (!parsed.author) parsed.author = '';
+      if (!parsed.tags) parsed.tags = [];
+      if (!parsed.notes) parsed.notes = [];
+      return parsed as Project;
+    }
   } catch { /* ignore corrupt data */ }
   return null;
 }
@@ -84,6 +98,9 @@ interface ProjectState {
   setProject: (project: Project) => void;
   newProject: (name?: string) => void;
   setProjectName: (name: string) => void;
+  setProjectDescription: (desc: string) => void;
+  setProjectAuthor: (author: string) => void;
+  setProjectTags: (tags: string[]) => void;
   setCurrentView: (view: EditorView) => void;
   setActiveSheet: (sheetId: string) => void;
   addSheet: (name: string, parentSheetId?: string | null) => string;
@@ -96,6 +113,11 @@ interface ProjectState {
   updateCustomComponent: (comp: ComponentDefinition) => void;
   markDirty: () => void;
   markClean: () => void;
+
+  // Notes
+  addNote: (title: string, content?: string) => string;
+  updateNote: (noteId: string, updates: Partial<Pick<ProjectNote, 'title' | 'content'>>) => void;
+  removeNote: (noteId: string) => void;
 
   // Sync actions
   syncSchematicToPerfboard: () => SyncResult;
@@ -119,9 +141,26 @@ export const useProjectStore = create<ProjectState>()(
 
     setProject: (project) =>
       set((state) => {
+        // Ensure new fields exist
+        if (!project.description) project.description = '';
+        if (!project.author) project.author = '';
+        if (!project.tags) project.tags = [];
+        if (!project.notes) project.notes = [];
         state.project = project;
         state.activeSheetId = project.schematic.sheets[0]?.id ?? 'main-sheet';
+        state.currentView = 'schematic';
         state.isDirty = false;
+        // Reset editor states (deferred to avoid circular import)
+        queueMicrotask(() => {
+          try {
+            const { resetSchematicEditorState } = require('./schematicStore');
+            const { resetPerfboardEditorState } = require('./perfboardStore');
+            resetSchematicEditorState();
+            resetPerfboardEditorState();
+          } catch { /* first load */ }
+        });
+        // Track last active project
+        try { localStorage.setItem(LAST_PROJECT_KEY, project.id); } catch { /* */ }
       }),
 
     newProject: (name) =>
@@ -132,11 +171,40 @@ export const useProjectStore = create<ProjectState>()(
         state.isDirty = false;
         // Clear autosave when starting fresh
         try { localStorage.removeItem(STORAGE_KEY); } catch { /* */ }
+        // Reset editor states
+        queueMicrotask(() => {
+          try {
+            const { resetSchematicEditorState } = require('./schematicStore');
+            const { resetPerfboardEditorState } = require('./perfboardStore');
+            resetSchematicEditorState();
+            resetPerfboardEditorState();
+          } catch { /* first load */ }
+        });
+        // Track last active
+        try { localStorage.setItem(LAST_PROJECT_KEY, state.project.id); } catch { /* */ }
       }),
 
     setProjectName: (name) =>
       set((state) => {
         state.project.name = name;
+        state.isDirty = true;
+      }),
+
+    setProjectDescription: (desc) =>
+      set((state) => {
+        state.project.description = desc;
+        state.isDirty = true;
+      }),
+
+    setProjectAuthor: (author) =>
+      set((state) => {
+        state.project.author = author;
+        state.isDirty = true;
+      }),
+
+    setProjectTags: (tags) =>
+      set((state) => {
+        state.project.tags = tags;
         state.isDirty = true;
       }),
 
@@ -212,6 +280,41 @@ export const useProjectStore = create<ProjectState>()(
 
     markDirty: () => set((state) => { state.isDirty = true; }),
     markClean: () => set((state) => { state.isDirty = false; }),
+
+    // ---- Notes ----
+    addNote: (title, content = '') => {
+      const id = uuid();
+      set((state) => {
+        if (!state.project.notes) state.project.notes = [];
+        state.project.notes.push({
+          id,
+          title,
+          content,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+        state.isDirty = true;
+      });
+      return id;
+    },
+
+    updateNote: (noteId, updates) =>
+      set((state) => {
+        if (!state.project.notes) return;
+        const note = state.project.notes.find(n => n.id === noteId);
+        if (!note) return;
+        if (updates.title !== undefined) note.title = updates.title;
+        if (updates.content !== undefined) note.content = updates.content;
+        note.updatedAt = new Date().toISOString();
+        state.isDirty = true;
+      }),
+
+    removeNote: (noteId) =>
+      set((state) => {
+        if (!state.project.notes) return;
+        state.project.notes = state.project.notes.filter(n => n.id !== noteId);
+        state.isDirty = true;
+      }),
 
     // ---- Sync: Schematic → Perfboard ----
     syncSchematicToPerfboard: () => {
@@ -364,6 +467,14 @@ export const useProjectStore = create<ProjectState>()(
 
 export { createEmptyProject, createEmptySchematic, createEmptyPerfboard };
 
+export function getLastActiveProjectId(): string | null {
+  try {
+    return localStorage.getItem(LAST_PROJECT_KEY);
+  } catch {
+    return null;
+  }
+}
+
 // ---- Debounced autosave subscriber ----
 let _autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -374,6 +485,9 @@ useProjectStore.subscribe((state) => {
     try {
       const data = JSON.stringify(state.project);
       localStorage.setItem(STORAGE_KEY, data);
+      // Also save to per-project key for project manager
+      localStorage.setItem(`lochcad-project-${state.project.id}`, data);
+      localStorage.setItem(LAST_PROJECT_KEY, state.project.id);
     } catch { /* quota exceeded — silently skip */ }
   }, AUTOSAVE_DELAY);
 });

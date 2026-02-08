@@ -5,14 +5,14 @@
 import React, { useRef, useCallback, useState, useMemo, useEffect } from 'react';
 import { Stage, Layer, Line, Circle, Text, Rect, Group } from 'react-konva';
 import type Konva from 'konva';
-import { useProjectStore, useSchematicStore } from '@/stores';
+import { useProjectStore, useSchematicStore, useCheckStore } from '@/stores';
 import { getBuiltInComponents, getComponentById } from '@/lib/component-library';
 import { SymbolRenderer } from './SymbolRenderer';
 import { COLORS, SCHEMATIC_GRID, SCHEMATIC_WIDTH, SCHEMATIC_HEIGHT, CATEGORY_PREFIX, nextUniqueReference } from '@/constants';
 import type { Point, SchematicComponent, Wire, Junction, NetLabel } from '@/types';
 import { v4 as uuid } from 'uuid';
 import { useHotkeys } from 'react-hotkeys-hook';
-import { routeSchematicWire, getComponentBBox, bboxOverlap, hasComponentCollision } from '@/lib/engine/schematic-router';
+import { routeSchematicWire, getComponentBBox, bboxOverlap, hasComponentCollision, getComponentPinSegments, buildOccupiedEdges, findSameNetWireIds, buildRoutingContext, buildOtherNetPinCells } from '@/lib/engine/schematic-router';
 import type { BBox } from '@/lib/engine/schematic-router';
 
 export default function SchematicEditor() {
@@ -25,6 +25,10 @@ export default function SchematicEditor() {
   const [placementMirror, setPlacementMirror] = useState(false);
   const isDraggingComponentRef = useRef(false);
   const autoScrollRafRef = useRef<number | null>(null);
+  const boxSelectStartRef = useRef<Point | null>(null);
+  const dragGroupRef = useRef<{ startPos: Point; ids: string[] } | null>(null);
+  const [selectionBox, setSelectionBox] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [shiftHeld, setShiftHeld] = useState(false);
 
   const viewport = useSchematicStore((s) => s.viewport);
   const setViewport = useSchematicStore((s) => s.setViewport);
@@ -42,19 +46,27 @@ export default function SchematicEditor() {
     [customComponents]
   );
 
-  // Resize handler
+  // Resize handler — use ResizeObserver so canvas updates when panels collapse/expand
   useEffect(() => {
-    const updateSize = () => {
-      if (containerRef.current) {
-        setStageSize({
-          width: containerRef.current.offsetWidth,
-          height: containerRef.current.offsetHeight,
-        });
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        setStageSize({ width, height });
       }
-    };
-    updateSize();
-    window.addEventListener('resize', updateSize);
-    return () => window.removeEventListener('resize', updateSize);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Track shift key for box selection
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Shift') setShiftHeld(true); };
+    const onKeyUp = (e: KeyboardEvent) => { if (e.key === 'Shift') setShiftHeld(false); };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => { window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); };
   }, []);
 
   // Filter elements for active sheet
@@ -79,12 +91,28 @@ export default function SchematicEditor() {
     [schematic.busses, activeSheetId]
   );
 
-  // Obstacle bboxes for all components on this sheet (for wire routing preview)
-  const sheetObstacles = useMemo<BBox[]>(() => {
-    return sheetComponents.map((c) => {
-      const def = allComponents.find((d) => d.id === c.libraryId);
-      return def ? getComponentBBox(c, def.symbol) : null;
-    }).filter((b): b is NonNullable<typeof b> => b !== null);
+  // Routing obstacles (full bboxes) + pin corridor allowed cells
+  const { sheetObstacles, sheetAllowedCells } = useMemo(() => {
+    const { obstacles, allowedCells } = buildRoutingContext(sheetComponents, allComponents);
+    return { sheetObstacles: obstacles, sheetAllowedCells: allowedCells };
+  }, [sheetComponents, allComponents]);
+
+  // Occupied grid-edges from existing wires (so new wires avoid overlap)
+  const sheetOccupiedEdges = useMemo<Set<string>>(() => {
+    return buildOccupiedEdges(sheetWires, SCHEMATIC_GRID);
+  }, [sheetWires]);
+
+  // All pin connection-point positions (world-space) for snap-to-pin
+  const PIN_SNAP_RADIUS = 15;
+  const sheetPinPositions = useMemo<Point[]>(() => {
+    const pins: Point[] = [];
+    for (const comp of sheetComponents) {
+      const def = allComponents.find((d) => d.id === comp.libraryId);
+      if (!def) continue;
+      const segs = getComponentPinSegments(comp, def.symbol);
+      for (const seg of segs) pins.push(seg.base);
+    }
+    return pins;
   }, [sheetComponents, allComponents]);
 
   // Check collision for component placement preview — only exact pin-on-pin allowed
@@ -106,18 +134,47 @@ export default function SchematicEditor() {
     if (!isDrawing || drawingPoints.length === 0) return null;
     const lastPoint = drawingPoints[drawingPoints.length - 1];
     if (lastPoint.x === mousePos.x && lastPoint.y === mousePos.y) return null;
+
+    // Same-net edges: wires sharing endpoints with drawing start should not be penalised
+    const sameNetIds = findSameNetWireIds(drawingPoints, sheetWires);
+    const sameNetEdges = buildOccupiedEdges(
+      sheetWires.filter((w) => sameNetIds.has(w.id)),
+      SCHEMATIC_GRID,
+    );
+
     return routeSchematicWire({
       from: lastPoint,
       to: mousePos,
       obstacles: sheetObstacles,
+      occupiedEdges: sheetOccupiedEdges,
+      sameNetEdges,
+      allowedCells: sheetAllowedCells,
+      blockedCells: buildOtherNetPinCells(sheetComponents, allComponents, drawingPoints, sheetWires),
     });
-  }, [isDrawing, drawingPoints, mousePos, sheetObstacles]);
+  }, [isDrawing, drawingPoints, mousePos, sheetObstacles, sheetAllowedCells, sheetOccupiedEdges, sheetWires]);
 
   // Snap to grid
   const snap = useCallback((p: Point): Point => ({
     x: Math.round(p.x / SCHEMATIC_GRID) * SCHEMATIC_GRID,
     y: Math.round(p.y / SCHEMATIC_GRID) * SCHEMATIC_GRID,
   }), []);
+
+  // Snap with pin priority — snaps to nearby pin connection points before falling back to grid
+  const snapWithPins = useCallback((p: Point): Point => {
+    let closestPin: Point | null = null;
+    let closestDist = PIN_SNAP_RADIUS;
+    for (const pin of sheetPinPositions) {
+      const dx = p.x - pin.x;
+      const dy = p.y - pin.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestPin = pin;
+      }
+    }
+    if (closestPin) return { x: closestPin.x, y: closestPin.y };
+    return snap(p);
+  }, [sheetPinPositions, snap]);
 
   // Get pointer position in canvas coordinates
   const getPointerPos = useCallback((): Point | null => {
@@ -165,7 +222,25 @@ export default function SchematicEditor() {
   const handleMouseMove = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
     const pos = getPointerPos();
     if (pos) {
-      setMousePos(snap(pos));
+      // Use pin-snap during wire/bus drawing for precise pin connections
+      const snapped = (isDrawing && (activeTool === 'draw_wire' || activeTool === 'draw_bus'))
+        ? snapWithPins(pos)
+        : snap(pos);
+      setMousePos(snapped);
+
+      // Box selection tracking
+      if (boxSelectStartRef.current) {
+        const rawPos = getPointerPos();
+        if (rawPos) {
+          const start = boxSelectStartRef.current;
+          setSelectionBox({
+            x: Math.min(start.x, rawPos.x),
+            y: Math.min(start.y, rawPos.y),
+            width: Math.abs(rawPos.x - start.x),
+            height: Math.abs(rawPos.y - start.y),
+          });
+        }
+      }
 
       if (isDrawing) {
         // Auto-scroll when drawing near stage edges
@@ -186,7 +261,7 @@ export default function SchematicEditor() {
         }
       }
     }
-  }, [getPointerPos, snap, isDrawing, stageSize]);
+  }, [getPointerPos, snap, snapWithPins, isDrawing, activeTool, stageSize]);
 
   const handleClick = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
     // Ignore right-click (used for rotation)
@@ -223,10 +298,11 @@ export default function SchematicEditor() {
     }
 
     if (activeTool === 'draw_wire' || activeTool === 'draw_bus') {
+      const pinSnapped = snapWithPins(pos);
       if (!isDrawing) {
-        useSchematicStore.getState().startDrawing(snapped);
+        useSchematicStore.getState().startDrawing(pinSnapped);
       } else {
-        useSchematicStore.getState().addDrawingPoint(snapped);
+        useSchematicStore.getState().addDrawingPoint(pinSnapped);
       }
       return;
     }
@@ -271,12 +347,12 @@ export default function SchematicEditor() {
     }
 
     if (activeTool === 'select') {
-      // Nothing clicked on canvas background → deselect
-      if (e.target === stageRef.current || e.target.getParent() === stageRef.current?.findOne('.grid-layer')) {
+      // Nothing clicked on canvas background → deselect (only without shift)
+      if (!e.evt.shiftKey && (e.target === stageRef.current || e.target.getParent() === stageRef.current?.findOne('.grid-layer'))) {
         useSchematicStore.getState().clearSelection();
       }
     }
-  }, [activeTool, placingComponentId, allComponents, snap, getPointerPos, isDrawing, activeSheetId, schematic.components, placementCollision, placementRotation, placementMirror]);
+  }, [activeTool, placingComponentId, allComponents, snap, snapWithPins, getPointerPos, isDrawing, activeSheetId, schematic.components, placementCollision, placementRotation, placementMirror]);
 
   // Right-click handler for rotation
   const handleContextMenu = useCallback((e: Konva.KonvaEventObject<PointerEvent>) => {
@@ -299,26 +375,55 @@ export default function SchematicEditor() {
 
   // Component interaction handlers
   const handleComponentClick = useCallback((compId: string, e: any) => {
-    e.cancelBubble = true;
     if (activeTool === 'select') {
+      e.cancelBubble = true;
       if (e.evt.shiftKey) {
         useSchematicStore.getState().toggleSelection('componentIds', compId);
       } else {
         useSchematicStore.getState().select({ componentIds: [compId] });
       }
     } else if (activeTool === 'delete') {
+      e.cancelBubble = true;
       useSchematicStore.getState().deleteComponent(compId);
     }
+    // For draw_wire / draw_bus: let click bubble to stage so drawing starts/adds points
   }, [activeTool]);
 
   const handleComponentDragEnd = useCallback((compId: string, x: number, y: number): boolean => {
     isDraggingComponentRef.current = false;
     if (autoScrollRafRef.current) { cancelAnimationFrame(autoScrollRafRef.current); autoScrollRafRef.current = null; }
+
+    const groupInfo = dragGroupRef.current;
+    dragGroupRef.current = null;
+
+    if (groupInfo && groupInfo.ids.length > 1) {
+      // Group drag: compute snapped delta and move all selected
+      const snappedX = Math.round(x / SCHEMATIC_GRID) * SCHEMATIC_GRID;
+      const snappedY = Math.round(y / SCHEMATIC_GRID) * SCHEMATIC_GRID;
+      const delta: Point = {
+        x: snappedX - groupInfo.startPos.x,
+        y: snappedY - groupInfo.startPos.y,
+      };
+      if (delta.x !== 0 || delta.y !== 0) {
+        useSchematicStore.getState().moveComponentGroup(groupInfo.ids, delta);
+      }
+      return true;
+    }
+
     return useSchematicStore.getState().moveComponent(compId, { x, y });
   }, []);
 
-  const handleComponentDragStart = useCallback(() => {
+  const handleComponentDragStart = useCallback((compId: string) => {
     isDraggingComponentRef.current = true;
+    const sel = useSchematicStore.getState().selection.componentIds;
+    if (sel.length > 1 && sel.includes(compId)) {
+      const comp = useProjectStore.getState().project.schematic.components.find((c) => c.id === compId);
+      if (comp) {
+        dragGroupRef.current = { startPos: { ...comp.position }, ids: [...sel] };
+      }
+    } else {
+      dragGroupRef.current = null;
+    }
   }, []);
 
   const handleComponentDragMove = useCallback(() => {
@@ -339,13 +444,49 @@ export default function SchematicEditor() {
     }
   }, [stageSize]);
 
+  // Box selection: start on shift+mouseDown on background
+  const handleMouseDown = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
+    if (e.evt.button !== 0) return;
+    if (activeTool !== 'select' || !e.evt.shiftKey) return;
+    const isBackground = e.target === stageRef.current || e.target.getParent()?.name() === 'grid-layer';
+    if (!isBackground) return;
+    const pos = getPointerPos();
+    if (pos) {
+      boxSelectStartRef.current = pos;
+      setSelectionBox({ x: pos.x, y: pos.y, width: 0, height: 0 });
+      stageRef.current?.stopDrag();
+    }
+  }, [activeTool, getPointerPos]);
+
+  // Box selection: finalize on mouseUp
+  const handleMouseUp = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
+    if (!boxSelectStartRef.current) return;
+    const box = selectionBox;
+    boxSelectStartRef.current = null;
+    setSelectionBox(null);
+    if (!box || (box.width < 5 && box.height < 5)) return;
+    const insideIds = sheetComponents
+      .filter((c) =>
+        c.position.x >= box.x && c.position.x <= box.x + box.width &&
+        c.position.y >= box.y && c.position.y <= box.y + box.height
+      )
+      .map((c) => c.id);
+    if (insideIds.length > 0) {
+      const currentSel = useSchematicStore.getState().selection.componentIds;
+      const merged = Array.from(new Set([...currentSel, ...insideIds]));
+      useSchematicStore.getState().select({ componentIds: merged });
+    }
+  }, [selectionBox, sheetComponents]);
+
   const handleWireClick = useCallback((wireId: string, e: any) => {
-    e.cancelBubble = true;
     if (activeTool === 'select') {
+      e.cancelBubble = true;
       useSchematicStore.getState().select({ wireIds: [wireId] });
     } else if (activeTool === 'delete') {
+      e.cancelBubble = true;
       useSchematicStore.getState().deleteWire(wireId);
     }
+    // For draw_wire / draw_bus: let click bubble to stage so drawing starts/adds points
   }, [activeTool]);
 
   // Keyboard shortcuts
@@ -389,6 +530,12 @@ export default function SchematicEditor() {
       sel.componentIds.forEach((id) => useSchematicStore.getState().rotateComponent(id));
     }
   }, { preventDefault: true, enableOnFormTags: true });
+  // Ctrl+A: select all components on the current sheet
+  useHotkeys('ctrl+a', (e) => {
+    e.preventDefault();
+    const ids = sheetComponents.map((c) => c.id);
+    useSchematicStore.getState().select({ componentIds: ids });
+  }, { preventDefault: true, enableOnFormTags: true });
 
   return (
     <div ref={containerRef} className="w-full h-full bg-lochcad-bg relative">
@@ -397,6 +544,8 @@ export default function SchematicEditor() {
         width={stageSize.width}
         height={stageSize.height}
         onWheel={handleWheel}
+        onMouseDown={handleMouseDown}
+        onMouseUp={handleMouseUp}
         onMouseMove={handleMouseMove}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
@@ -405,7 +554,7 @@ export default function SchematicEditor() {
         y={viewport.y}
         scaleX={viewport.scale}
         scaleY={viewport.scale}
-        draggable={activeTool === 'select' && !isDrawing && !isDraggingComponentRef.current}
+        draggable={activeTool === 'select' && !isDrawing && !isDraggingComponentRef.current && !shiftHeld}
         onDragEnd={(e) => {
           if (e.target !== stageRef.current) return;
           setViewport({ x: e.target.x(), y: e.target.y() });
@@ -495,12 +644,12 @@ export default function SchematicEditor() {
                 isSelected={selection.componentIds.includes(comp.id)}
                 isHovered={hoveredComponentId === comp.id}
                 draggable={activeTool === 'select'}
-                onClick={() => handleComponentClick(comp.id, { cancelBubble: true, evt: { shiftKey: false } })}
+                onClick={(e: any) => handleComponentClick(comp.id, e)}
                 onDblClick={() => {
                   // Select exclusively on double-click, ensuring properties panel shows
                   useSchematicStore.getState().select({ componentIds: [comp.id] });
                 }}
-                onDragStart={handleComponentDragStart}
+                onDragStart={() => handleComponentDragStart(comp.id)}
                 onDragMove={handleComponentDragMove}
                 onDragEnd={(x, y) => handleComponentDragEnd(comp.id, x, y)}
               />
@@ -547,6 +696,19 @@ export default function SchematicEditor() {
 
         {/* Overlay Layer — cursor crosshair, placement preview */}
         <Layer listening={false}>
+          {/* Selection box */}
+          {selectionBox && (
+            <Rect
+              x={selectionBox.x}
+              y={selectionBox.y}
+              width={selectionBox.width}
+              height={selectionBox.height}
+              fill="rgba(0, 140, 255, 0.08)"
+              stroke="rgba(0, 140, 255, 0.5)"
+              strokeWidth={1}
+              dash={[6, 3]}
+            />
+          )}
           {/* Cursor crosshair */}
           {(activeTool !== 'select') && (
             <>
@@ -621,6 +783,9 @@ export default function SchematicEditor() {
             opacity={0.5}
           />
         </Layer>
+
+        {/* ERC Error Highlighting Overlay */}
+        <ERCOverlayLayer />
       </Stage>
 
       {/* Tool hint overlay */}
@@ -691,3 +856,96 @@ const WireRenderer: React.FC<{ wire: Wire; isSelected: boolean; onClick: (e: any
 );
 
 WireRenderer.displayName = 'WireRenderer';
+
+// ---- ERC Error Overlay ----
+
+const ERCOverlayLayer: React.FC = React.memo(() => {
+  const activeCheck = useCheckStore((s) => s.activeCheck);
+  const ercResult = useCheckStore((s) => s.ercResult);
+  const highlightedId = useCheckStore((s) => s.highlightedViolationId);
+  const ercErrorComponentIds = useCheckStore((s) => s.ercErrorComponentIds);
+  const ercWarningComponentIds = useCheckStore((s) => s.ercWarningComponentIds);
+
+  if (activeCheck !== 'erc' || !ercResult) return null;
+
+  const violations = ercResult.violations;
+
+  return (
+    <Layer name="erc-overlay" listening={false}>
+      {violations.map((v) => {
+        if (!v.position || !('x' in v.position)) return null;
+        const isActive = highlightedId === v.id;
+        const color = v.severity === 'error' ? COLORS.errorMarker
+          : v.severity === 'warning' ? COLORS.warningMarker
+          : '#4fc3f7';
+        const size = isActive ? 18 : 12;
+        const opacity = isActive ? 1 : 0.7;
+
+        return (
+          <Group key={v.id}>
+            {/* Pulsing circle marker */}
+            <Circle
+              x={v.position.x}
+              y={v.position.y}
+              radius={size}
+              fill={color}
+              opacity={opacity * 0.15}
+            />
+            <Circle
+              x={v.position.x}
+              y={v.position.y}
+              radius={size * 0.6}
+              fill={color}
+              opacity={opacity * 0.3}
+            />
+            {/* Cross or dot at center */}
+            <Line
+              points={[
+                v.position.x - 4, v.position.y - 4,
+                v.position.x + 4, v.position.y + 4,
+              ]}
+              stroke={color}
+              strokeWidth={isActive ? 2.5 : 1.5}
+              opacity={opacity}
+            />
+            <Line
+              points={[
+                v.position.x + 4, v.position.y - 4,
+                v.position.x - 4, v.position.y + 4,
+              ]}
+              stroke={color}
+              strokeWidth={isActive ? 2.5 : 1.5}
+              opacity={opacity}
+            />
+            {/* Label for highlighted */}
+            {isActive && (
+              <>
+                <Rect
+                  x={v.position.x + 14}
+                  y={v.position.y - 10}
+                  width={Math.min(v.message.length * 5.5, 250)}
+                  height={16}
+                  fill="rgba(0,0,0,0.85)"
+                  cornerRadius={3}
+                />
+                <Text
+                  x={v.position.x + 17}
+                  y={v.position.y - 7}
+                  text={v.message}
+                  fontSize={9}
+                  fontFamily="JetBrains Mono, monospace"
+                  fill={color}
+                  width={250}
+                  ellipsis
+                  wrap="none"
+                />
+              </>
+            )}
+          </Group>
+        );
+      })}
+    </Layer>
+  );
+});
+
+ERCOverlayLayer.displayName = 'ERCOverlayLayer';

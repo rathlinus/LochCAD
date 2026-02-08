@@ -235,6 +235,89 @@ export function getComponentPinTips(
 }
 
 /**
+ * Build routing obstacles (body bboxes with a minimum size so even narrow
+ * components like capacitors block properly) plus pin-corridor allowed cells
+ * so the A* router can still reach pin connection points through their stubs.
+ *
+ * Body bboxes are used instead of full bboxes so that pin stub *areas* (above
+ * and below the drawn stub lines) remain free for routing.  Only the grid
+ * cells that lie ON a pin segment AND inside the obstacle bbox are marked as
+ * allowed – this lets wires approach pins along the stub direction without
+ * being able to freely traverse the body.
+ */
+export function buildRoutingContext(
+  components: SchematicComponent[],
+  allLib: ComponentDefinition[],
+  grid: number = SCHEMATIC_GRID,
+): { obstacles: BBox[]; allowedCells: Set<string> } {
+  const obstacles: BBox[] = [];
+  const allowedCells = new Set<string>();
+
+  // Minimum obstacle dimension — ensures even very narrow body graphics
+  // (e.g. capacitor plates) produce a meaningful routing obstacle.
+  const MIN_DIM = grid * 3;
+
+  for (const comp of components) {
+    const def = allLib.find((d) => d.id === comp.libraryId);
+    if (!def) continue;
+
+    // Body-only bbox (excludes pin stubs)
+    const bbox = getComponentBodyBBox(comp, def.symbol);
+
+    // Enforce minimum dimensions (expand symmetrically around centre)
+    if (bbox.width < MIN_DIM) {
+      const cx = bbox.x + bbox.width / 2;
+      bbox.x = cx - MIN_DIM / 2;
+      bbox.width = MIN_DIM;
+    }
+    if (bbox.height < MIN_DIM) {
+      const cy = bbox.y + bbox.height / 2;
+      bbox.y = cy - MIN_DIM / 2;
+      bbox.height = MIN_DIM;
+    }
+
+    obstacles.push(bbox);
+
+    // Create allowed-cell corridors so the router can reach pin connection
+    // points (base) that may lie inside the (expanded) body bbox.
+    //
+    // IMPORTANT: only allow cells from the base toward the OUTSIDE of the
+    // body (opposite direction of base→tip).  Do NOT extend the corridor
+    // from base toward the tip (deeper into the body) — that would let
+    // wires shortcut through the component body.
+    const segs = getComponentPinSegments(comp, def.symbol);
+    for (const seg of segs) {
+      const bx = Math.round(seg.base.x / grid) * grid;
+      const by = Math.round(seg.base.y / grid) * grid;
+      const tx = Math.round(seg.tip.x / grid) * grid;
+      const ty = Math.round(seg.tip.y / grid) * grid;
+
+      // Always allow the base cell itself (connection point)
+      if (pointInBBox(bx, by, bbox)) allowedCells.add(gk(bx, by));
+
+      if (by === ty && bx !== tx) {
+        // Horizontal pin — walk from base OUTWARD (away from tip)
+        const outStep = tx > bx ? -grid : grid;
+        for (let x = bx + outStep; ; x += outStep) {
+          if (!pointInBBox(x, by, bbox)) break;
+          allowedCells.add(gk(x, by));
+        }
+      } else if (bx === tx && by !== ty) {
+        // Vertical pin — walk from base OUTWARD (away from tip)
+        const outStep = ty > by ? -grid : grid;
+        for (let y = by + outStep; ; y += outStep) {
+          if (!pointInBBox(bx, y, bbox)) break;
+          allowedCells.add(gk(bx, y));
+        }
+      }
+      // Diagonal/zero-length: base cell already added above
+    }
+  }
+
+  return { obstacles, allowedCells };
+}
+
+/**
  * Check if a line segment (p0→p1) intersects an axis-aligned bounding box.
  * Uses Liang-Barsky algorithm.
  */
@@ -350,6 +433,116 @@ function pointInBBox(px: number, py: number, box: BBox): boolean {
   return px >= box.x && px <= box.x + box.width && py >= box.y && py <= box.y + box.height;
 }
 
+// ---- Wire-edge occupancy helpers ----
+
+/** Canonical key for a grid edge between two adjacent cells */
+function edgeKey(x1: number, y1: number, x2: number, y2: number): string {
+  if (x1 < x2 || (x1 === x2 && y1 < y2)) return `${x1},${y1}>${x2},${y2}`;
+  return `${x2},${y2}>${x1},${y1}`;
+}
+
+/**
+ * Check if any segment of a wire's point list intersects a bounding box.
+ * Endpoints that are exactly on the bbox border (e.g. connected pins) are ignored.
+ */
+export function wirePassesThroughBBox(points: Point[], box: BBox): boolean {
+  for (let i = 0; i < points.length - 1; i++) {
+    if (segmentIntersectsBBox(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y, box)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Find all wire IDs on the same electrical net as the given seed points.
+ * Uses BFS through shared wire endpoints to discover transitive connectivity.
+ */
+export function findSameNetWireIds(
+  seedPoints: Point[],
+  sheetWires: { id: string; points: Point[] }[],
+  eps = 2,
+): Set<string> {
+  const match = (a: Point, b: Point) => Math.abs(a.x - b.x) < eps && Math.abs(a.y - b.y) < eps;
+
+  const result = new Set<string>();
+  const knownPoints: Point[] = seedPoints.map(p => ({ x: p.x, y: p.y }));
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+    for (const wire of sheetWires) {
+      if (result.has(wire.id) || wire.points.length < 2) continue;
+      const f = wire.points[0];
+      const l = wire.points[wire.points.length - 1];
+
+      if (knownPoints.some(p => match(p, f) || match(p, l))) {
+        result.add(wire.id);
+        if (!knownPoints.some(p => match(p, f))) { knownPoints.push({ x: f.x, y: f.y }); changed = true; }
+        if (!knownPoints.some(p => match(p, l))) { knownPoints.push({ x: l.x, y: l.y }); changed = true; }
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Build a set of occupied grid-edge keys from existing wire point arrays.
+ * Used so the A* router can penalise paths that would overlap other wires.
+ */
+export function buildOccupiedEdges(
+  wires: { points: Point[] }[],
+  grid: number,
+): Set<string> {
+  const edges = new Set<string>();
+  for (const wire of wires) {
+    addWireEdges(wire.points, grid, edges);
+  }
+  return edges;
+}
+
+/**
+ * Add grid-edge keys for a single wire's points to an existing set.
+ * Use this to incrementally update occupied edges after routing a wire.
+ */
+export function addWireEdges(
+  points: Point[],
+  grid: number,
+  edges: Set<string>,
+): void {
+  for (let i = 0; i < points.length - 1; i++) {
+    const ax = Math.round(points[i].x / grid) * grid;
+    const ay = Math.round(points[i].y / grid) * grid;
+    const bx = Math.round(points[i + 1].x / grid) * grid;
+    const by = Math.round(points[i + 1].y / grid) * grid;
+    // Horizontal segment
+    if (ay === by) {
+      const minX = Math.min(ax, bx);
+      const maxX = Math.max(ax, bx);
+      for (let x = minX; x < maxX; x += grid) {
+        edges.add(edgeKey(x, ay, x + grid, ay));
+      }
+    // Vertical segment
+    } else if (ax === bx) {
+      const minY = Math.min(ay, by);
+      const maxY = Math.max(ay, by);
+      for (let y = minY; y < maxY; y += grid) {
+        edges.add(edgeKey(ax, y, ax, y + grid));
+      }
+    }
+  }
+}
+
+/**
+ * Return the set of grid-edge keys for a single wire's points.
+ */
+export function getWireEdgeSet(points: Point[], grid: number = SCHEMATIC_GRID): Set<string> {
+  const s = new Set<string>();
+  addWireEdges(points, grid, s);
+  return s;
+}
+
 // ---- Manhattan routing ----
 
 type GridKey = string;
@@ -366,6 +559,16 @@ interface SchRouteOpts {
   grid?: number;
   /** Maximum search area in grid cells from the bounding rect of from/to */
   maxExpand?: number;
+  /** Grid edges already occupied by other wires — penalised to avoid overlap */
+  occupiedEdges?: Set<string>;
+  /** Grid edges belonging to same-net wires — exempt from overlap penalty */
+  sameNetEdges?: Set<string>;
+  /** Grid cells that are inside obstacle bboxes but should NOT be blocked
+   *  (e.g. cells along component pin segments so wires can reach pins). */
+  allowedCells?: Set<string>;
+  /** Grid cells that must be blocked regardless of allowedCells
+   *  (e.g. pin positions from different nets to prevent net-pin overlap). */
+  blockedCells?: Set<string>;
 }
 
 /**
@@ -379,6 +582,10 @@ export function routeSchematicWire(opts: SchRouteOpts): Point[] | null {
   const grid = opts.grid ?? SCHEMATIC_GRID;
   const { from, to, obstacles } = opts;
   const maxExpand = opts.maxExpand ?? 60;
+  const occupiedEdges = opts.occupiedEdges;
+  const sameNetEdges = opts.sameNetEdges;
+  const allowedCells = opts.allowedCells;
+  const blockedCells = opts.blockedCells;
 
   // Snap endpoints to grid
   const sx = Math.round(from.x / grid) * grid;
@@ -401,6 +608,8 @@ export function routeSchematicWire(opts: SchRouteOpts): Point[] | null {
   const isBlocked = (px: number, py: number): boolean => {
     const key = gk(px, py);
     if (key === startKey || key === endKey) return false;
+    if (blockedCells && blockedCells.has(key)) return true;
+    if (allowedCells && allowedCells.has(key)) return false;
     for (const box of obstacles) {
       if (pointInBBox(px, py, box)) return true;
     }
@@ -462,9 +671,14 @@ export function routeSchematicWire(opts: SchRouteOpts): Point[] | null {
       // Allow endpoints even if inside obstacle
       if (nKey !== startKey && nKey !== endKey && isBlocked(nx, ny)) continue;
 
-      // Cost: 1 per step + turn penalty
+      // Cost: 1 per step + turn penalty + overlap penalty
       const isTurn = currentDir !== undefined && currentDir !== di;
-      const tentativeG = currentG + 1 + (isTurn ? TURN_PENALTY : 0);
+      const OVERLAP_PENALTY = 50;
+      const ek = edgeKey(cx, cy, nx, ny);
+      const edgeOccupied = occupiedEdges
+        ? occupiedEdges.has(ek) && !(sameNetEdges && sameNetEdges.has(ek))
+        : false;
+      const tentativeG = currentG + 1 + (isTurn ? TURN_PENALTY : 0) + (edgeOccupied ? OVERLAP_PENALTY : 0);
       const prevG = gScore.get(nKey) ?? Infinity;
 
       if (tentativeG < prevG) {
@@ -514,6 +728,65 @@ function reconstructAndSimplify(
   }
   result.push(raw[raw.length - 1]);
   return result;
+}
+
+/**
+ * Build a set of grid cell keys for pin positions (and their corridor cells)
+ * that do NOT belong to the same electrical net as the given wire endpoints.
+ * These cells should be blocked during routing to prevent wires from
+ * overlapping with pins of different nets.
+ */
+export function buildOtherNetPinCells(
+  components: SchematicComponent[],
+  allLib: { id: string; symbol: ComponentSymbol }[],
+  wireEndpoints: Point[],
+  sheetWires: { id: string; points: Point[] }[],
+  grid: number = SCHEMATIC_GRID,
+): Set<string> {
+  // Determine same-net connectivity via wire graph
+  const sameNetIds = findSameNetWireIds(wireEndpoints, sheetWires);
+  const sameNetPoints: Point[] = [...wireEndpoints];
+  for (const w of sheetWires) {
+    if (sameNetIds.has(w.id) && w.points.length >= 2) {
+      sameNetPoints.push(w.points[0]);
+      sameNetPoints.push(w.points[w.points.length - 1]);
+    }
+  }
+
+  const PIN_EPS = 2;
+  const isSameNet = (p: Point) => sameNetPoints.some(
+    sp => Math.abs(sp.x - p.x) < PIN_EPS && Math.abs(sp.y - p.y) < PIN_EPS,
+  );
+
+  const blocked = new Set<string>();
+  for (const comp of components) {
+    const def = allLib.find(d => d.id === comp.libraryId);
+    if (!def) continue;
+    const segs = getComponentPinSegments(comp, def.symbol);
+    for (const seg of segs) {
+      if (isSameNet(seg.base)) continue;
+      // Block pin base cell and corridor cells along the pin segment (base → tip)
+      const bx = Math.round(seg.base.x / grid) * grid;
+      const by = Math.round(seg.base.y / grid) * grid;
+      const tx = Math.round(seg.tip.x / grid) * grid;
+      const ty = Math.round(seg.tip.y / grid) * grid;
+      blocked.add(`${bx},${by}`);
+      if (by === ty) {
+        const minX = Math.min(bx, tx);
+        const maxX = Math.max(bx, tx);
+        for (let x = minX; x <= maxX; x += grid) {
+          blocked.add(`${x},${by}`);
+        }
+      } else if (bx === tx) {
+        const minY = Math.min(by, ty);
+        const maxY = Math.max(by, ty);
+        for (let y = minY; y <= maxY; y += grid) {
+          blocked.add(`${bx},${y}`);
+        }
+      }
+    }
+  }
+  return blocked;
 }
 
 function lRoute(from: Point, to: Point): Point[] {

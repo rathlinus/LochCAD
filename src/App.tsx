@@ -1,7 +1,9 @@
 import React, { useEffect } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useProjectStore, useSchematicStore, usePerfboardStore } from '@/stores';
+import { useProjectManagerStore } from '@/stores/projectManagerStore';
 import { ToastContainer } from '@/components/Toast';
+import { ProjectManager } from '@/components/ProjectManager';
 
 /** Trigger a file-open dialog and load a .lochcad / .json project */
 function triggerImport() {
@@ -48,7 +50,18 @@ export default function App() {
         const data = JSON.stringify(useProjectStore.getState().project, null, 2);
         localStorage.setItem('lochcad-autosave', data);
         localStorage.setItem('lochcad-project', data);
+        // Also save to project manager store
+        useProjectManagerStore.getState().saveCurrentProject();
         useProjectStore.getState().markClean();
+        return;
+      }
+
+      // Ctrl+Shift+P — open project manager
+      if (ctrl && e.shiftKey && (e.key === 'p' || e.key === 'P')) {
+        e.preventDefault();
+        const { isOpen, open, close } = useProjectManagerStore.getState();
+        if (isOpen) close();
+        else open();
         return;
       }
 
@@ -141,6 +154,7 @@ export default function App() {
   return (
     <>
       <AppLayout />
+      <ProjectManager />
       <ToastContainer />
     </>
   );

@@ -2,7 +2,7 @@
 // Export: Project File (.lochcad) — ZIP archive with JSON
 // ============================================================
 
-import type { Project } from '@/types';
+import type { Project, ProjectNote } from '@/types';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 
@@ -32,10 +32,27 @@ export async function saveProjectFile(project: Project): Promise<void> {
   // Add metadata
   zip.file('meta.json', JSON.stringify({
     name: project.name,
+    description: project.description || '',
+    author: project.author || '',
+    tags: project.tags || [],
     version: PROJECT_VERSION,
-    sheets: project.sheets.length,
+    sheets: project.schematic?.sheets?.length || 0,
+    components: project.schematic?.components?.length || 0,
+    noteCount: project.notes?.length || 0,
     exportDate: new Date().toISOString(),
   }, null, 2));
+
+  // Add notes as individual text files
+  if (project.notes?.length) {
+    const notesFolder = zip.folder('notes');
+    if (notesFolder) {
+      for (const note of project.notes) {
+        const safeName = note.title.replace(/[^a-zA-Z0-9_-]/g, '_');
+        notesFolder.file(`${safeName}.md`, `# ${note.title}\n\n${note.content}\n`);
+      }
+      notesFolder.file('_index.json', JSON.stringify(project.notes, null, 2));
+    }
+  }
 
   const blob = await zip.generateAsync({
     type: 'blob',
@@ -62,7 +79,40 @@ export async function loadProjectFile(file: File): Promise<Project> {
     throw new Error('Ungültige Projektdatei: Falsches Format');
   }
 
-  return parsed.project;
+  const project = parsed.project;
+
+  // Ensure new fields
+  if (!project.description) project.description = '';
+  if (!project.author) project.author = '';
+  if (!project.tags) project.tags = [];
+  if (!project.notes) project.notes = [];
+
+  return project;
+}
+
+/** Export notes only as a standalone file */
+export function exportNotesAsMarkdown(project: Project): string {
+  if (!project.notes?.length) return `# ${project.name} — Notes\n\n_No notes._\n`;
+
+  const lines: string[] = [`# ${project.name} — Notes\n`];
+  for (const note of project.notes) {
+    lines.push(`## ${note.title}`);
+    lines.push(`_Created: ${new Date(note.createdAt).toLocaleString()} | Updated: ${new Date(note.updatedAt).toLocaleString()}_\n`);
+    lines.push(note.content);
+    lines.push('\n---\n');
+  }
+  return lines.join('\n');
+}
+
+/** Import notes from a JSON notes array */
+export function importNotes(json: string): ProjectNote[] {
+  try {
+    const arr = JSON.parse(json);
+    if (!Array.isArray(arr)) return [];
+    return arr.filter((n: any) => n.id && n.title && n.content !== undefined) as ProjectNote[];
+  } catch {
+    return [];
+  }
 }
 
 // ============================================================

@@ -147,11 +147,18 @@ body {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s;
-  z-index: 100;
+  z-index: 9999;
 }
 
 [data-tooltip]:hover::after {
   opacity: 1;
+}
+
+/* Inside the toolbar, show tooltips below to avoid being clipped by ancestor overflow-hidden */
+[data-toolbar] [data-tooltip]::after {
+  bottom: auto;
+  top: 100%;
+  margin-top: 4px;
 }
 
 /* Animations */
@@ -166,13 +173,24 @@ body {
 
 /* Context menu */
 .context-menu {
-  @apply absolute bg-lochcad-surface border border-lochcad-panel/50 rounded-lg shadow-xl py-1 z-50 min-w-[160px];
+  @apply absolute bg-lochcad-surface border border-lochcad-panel/50 rounded-lg shadow-xl py-1 min-w-[160px];
+  z-index: 9990;
+  backdrop-filter: blur(8px);
 }
 
 .context-menu-item {
-  @apply px-3 py-1.5 text-sm text-lochcad-text hover:bg-lochcad-panel/30 cursor-pointer flex items-center gap-2;
+  @apply px-3 py-1.5 text-xs text-lochcad-text hover:bg-lochcad-accent/15 cursor-pointer flex items-center gap-2 transition-colors duration-75;
+}
+
+.context-menu-item:active {
+  @apply bg-lochcad-accent/25;
 }
 
 .context-menu-separator {
   @apply border-t border-lochcad-panel/30 my-1;
+}
+
+/* Disabled button */
+button:disabled {
+  @apply opacity-40 cursor-not-allowed;
 }

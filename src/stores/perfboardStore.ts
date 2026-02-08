@@ -47,6 +47,7 @@ interface PerfboardState {
   // Component placement
   placeComponent: (comp: Omit<PerfboardComponent, 'id'>) => string;
   moveComponent: (id: string, gridPosition: GridPosition) => boolean;
+  moveComponentGroup: (ids: string[], colDelta: number, rowDelta: number) => void;
   rotateComponent: (id: string) => void;
   removeComponent: (id: string) => void;
 
@@ -100,6 +101,21 @@ function restorePBSnapshot(snap: PBSnapshot) {
     state.project.perfboard = doc;
     state.project.updatedAt = new Date().toISOString();
     state.isDirty = true;
+  });
+}
+
+/** Reset all editor state when switching projects. */
+export function resetPerfboardEditorState() {
+  _pbUndoStack.length = 0;
+  _pbRedoStack.length = 0;
+  usePerfboardStore.setState({
+    activeTool: 'select',
+    placingComponentId: null,
+    viewport: { x: 0, y: 0, scale: 1 },
+    selectedIds: [],
+    isDrawing: false,
+    drawingFrom: null,
+    drawingTo: null,
   });
 }
 
@@ -236,6 +252,21 @@ export const usePerfboardStore = create<PerfboardState>()(
         if (c) c.gridPosition = gridPosition;
       });
       return true;
+    },
+
+    moveComponentGroup: (ids, colDelta, rowDelta) => {
+      if (ids.length === 0 || (colDelta === 0 && rowDelta === 0)) return;
+      get().pushSnapshot();
+      mutatePerfboard((p) => {
+        for (const id of ids) {
+          const c = p.components.find((c) => c.id === id);
+          if (!c) continue;
+          c.gridPosition = {
+            col: c.gridPosition.col + colDelta,
+            row: c.gridPosition.row + rowDelta,
+          };
+        }
+      });
     },
 
     rotateComponent: (id) => {

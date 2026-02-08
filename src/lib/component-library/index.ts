@@ -677,17 +677,17 @@ function createTransistors(): ComponentDefinition[] {
       keywords: ['transistor', 'npn', 'bjt', 'Q'],
       symbol: {
         graphics: [
-          { type: 'circle', center: { x: 5, y: 0 }, radius: 18, stroke: '#2176B7', strokeWidth: 1.5 },
+          { type: 'circle', center: { x: 7, y: 0 }, radius: 20, stroke: '#2176B7', strokeWidth: 1.5 },
           { type: 'line', start: { x: -10, y: 0 }, end: { x: 0, y: 0 }, stroke: '#2176B7', strokeWidth: 2 },
           { type: 'line', start: { x: 0, y: -12 }, end: { x: 0, y: 12 }, stroke: '#2176B7', strokeWidth: 2 },
-          { type: 'line', start: { x: 0, y: -6 }, end: { x: 15, y: -15 }, stroke: '#2176B7', strokeWidth: 2 },
-          { type: 'line', start: { x: 0, y: 6 }, end: { x: 15, y: 15 }, stroke: '#2176B7', strokeWidth: 2 },
-          { type: 'polyline', points: [{ x: 10, y: 14 }, { x: 15, y: 15 }, { x: 12, y: 11 }], stroke: '#2176B7', strokeWidth: 1, closed: true, fill: '#2176B7' },
+          { type: 'line', start: { x: 0, y: -6 }, end: { x: 20, y: -15 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'line', start: { x: 0, y: 6 }, end: { x: 20, y: 15 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'polyline', points: [{ x: 15, y: 14 }, { x: 20, y: 15 }, { x: 17, y: 11 }], stroke: '#2176B7', strokeWidth: 1, closed: true, fill: '#2176B7' },
         ],
         pins: [
           { number: '1', name: 'B', position: { x: -40, y: 0 }, length: 30, direction: 0, electricalType: 'input' },
-          { number: '2', name: 'C', position: { x: 15, y: -30 }, length: 15, direction: 270, electricalType: 'output' },
-          { number: '3', name: 'E', position: { x: 15, y: 30 }, length: 15, direction: 90, electricalType: 'output' },
+          { number: '2', name: 'C', position: { x: 20, y: -30 }, length: 15, direction: 90, electricalType: 'output' },
+          { number: '3', name: 'E', position: { x: 20, y: 30 }, length: 15, direction: 270, electricalType: 'output' },
         ],
       },
       footprint: {
@@ -714,17 +714,17 @@ function createTransistors(): ComponentDefinition[] {
       keywords: ['transistor', 'pnp', 'bjt'],
       symbol: {
         graphics: [
-          { type: 'circle', center: { x: 5, y: 0 }, radius: 18, stroke: '#2176B7', strokeWidth: 1.5 },
+          { type: 'circle', center: { x: 7, y: 0 }, radius: 20, stroke: '#2176B7', strokeWidth: 1.5 },
           { type: 'line', start: { x: -10, y: 0 }, end: { x: 0, y: 0 }, stroke: '#2176B7', strokeWidth: 2 },
           { type: 'line', start: { x: 0, y: -12 }, end: { x: 0, y: 12 }, stroke: '#2176B7', strokeWidth: 2 },
-          { type: 'line', start: { x: 0, y: -6 }, end: { x: 15, y: -15 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'line', start: { x: 0, y: -6 }, end: { x: 20, y: -15 }, stroke: '#2176B7', strokeWidth: 2 },
           { type: 'polyline', points: [{ x: 5, y: -11 }, { x: 2, y: -7 }, { x: 7, y: -8 }], stroke: '#2176B7', strokeWidth: 1, closed: true, fill: '#2176B7' },
-          { type: 'line', start: { x: 0, y: 6 }, end: { x: 15, y: 15 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'line', start: { x: 0, y: 6 }, end: { x: 20, y: 15 }, stroke: '#2176B7', strokeWidth: 2 },
         ],
         pins: [
           { number: '1', name: 'B', position: { x: -40, y: 0 }, length: 30, direction: 0, electricalType: 'input' },
-          { number: '2', name: 'C', position: { x: 15, y: 30 }, length: 15, direction: 90, electricalType: 'output' },
-          { number: '3', name: 'E', position: { x: 15, y: -30 }, length: 15, direction: 270, electricalType: 'output' },
+          { number: '2', name: 'C', position: { x: 20, y: 30 }, length: 15, direction: 270, electricalType: 'output' },
+          { number: '3', name: 'E', position: { x: 20, y: -30 }, length: 15, direction: 90, electricalType: 'output' },
         ],
       },
       footprint: {
@@ -751,24 +751,24 @@ function createTransistors(): ComponentDefinition[] {
       keywords: ['mosfet', 'n-channel', 'fet', 'transistor', '2N7000'],
       symbol: {
         graphics: [
-          { type: 'circle', center: { x: 5, y: 0 }, radius: 18, stroke: '#2176B7', strokeWidth: 1.5 },
+          { type: 'circle', center: { x: 7, y: 0 }, radius: 20, stroke: '#2176B7', strokeWidth: 1.5 },
           { type: 'line', start: { x: -10, y: 0 }, end: { x: 0, y: 0 }, stroke: '#2176B7', strokeWidth: 2 },
           { type: 'line', start: { x: 0, y: -12 }, end: { x: 0, y: 12 }, stroke: '#2176B7', strokeWidth: 3 },
           { type: 'line', start: { x: 3, y: -10 }, end: { x: 3, y: -4 }, stroke: '#2176B7', strokeWidth: 2 },
           { type: 'line', start: { x: 3, y: -1 }, end: { x: 3, y: 5 }, stroke: '#2176B7', strokeWidth: 2 },
           { type: 'line', start: { x: 3, y: 6 }, end: { x: 3, y: 12 }, stroke: '#2176B7', strokeWidth: 2 },
-          { type: 'line', start: { x: 3, y: -7 }, end: { x: 15, y: -7 }, stroke: '#2176B7', strokeWidth: 2 },
-          { type: 'line', start: { x: 3, y: 9 }, end: { x: 15, y: 9 }, stroke: '#2176B7', strokeWidth: 2 },
-          { type: 'line', start: { x: 15, y: -7 }, end: { x: 15, y: -15 }, stroke: '#2176B7', strokeWidth: 2 },
-          { type: 'line', start: { x: 15, y: 9 }, end: { x: 15, y: 15 }, stroke: '#2176B7', strokeWidth: 2 },
-          { type: 'line', start: { x: 3, y: 2 }, end: { x: 15, y: 2 }, stroke: '#2176B7', strokeWidth: 2 },
-          { type: 'line', start: { x: 15, y: 2 }, end: { x: 15, y: 9 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'line', start: { x: 3, y: -7 }, end: { x: 20, y: -7 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'line', start: { x: 3, y: 9 }, end: { x: 20, y: 9 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'line', start: { x: 20, y: -7 }, end: { x: 20, y: -15 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'line', start: { x: 20, y: 9 }, end: { x: 20, y: 15 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'line', start: { x: 3, y: 2 }, end: { x: 20, y: 2 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'line', start: { x: 20, y: 2 }, end: { x: 20, y: 9 }, stroke: '#2176B7', strokeWidth: 2 },
           { type: 'polyline', points: [{ x: 7, y: -1 }, { x: 3, y: 2 }, { x: 7, y: 5 }], stroke: '#2176B7', strokeWidth: 1, closed: true, fill: '#2176B7' },
         ],
         pins: [
           { number: '1', name: 'G', position: { x: -40, y: 0 }, length: 30, direction: 0, electricalType: 'input' },
-          { number: '2', name: 'D', position: { x: 15, y: -30 }, length: 15, direction: 270, electricalType: 'passive' },
-          { number: '3', name: 'S', position: { x: 15, y: 30 }, length: 15, direction: 90, electricalType: 'passive' },
+          { number: '2', name: 'D', position: { x: 20, y: -30 }, length: 15, direction: 90, electricalType: 'passive' },
+          { number: '3', name: 'S', position: { x: 20, y: 30 }, length: 15, direction: 270, electricalType: 'passive' },
         ],
       },
       footprint: {
@@ -847,17 +847,17 @@ function createICs(): ComponentDefinition[] {
       keywords: ['opamp', 'op-amp', 'operational amplifier', 'IC'],
       symbol: {
         graphics: [
-          { type: 'rectangle', start: { x: -25, y: -20 }, end: { x: 25, y: 20 }, stroke: '#2176B7', strokeWidth: 2 },
-          { type: 'text', position: { x: -18, y: -10 }, text: '+', fontSize: 12, stroke: '#2176B7' },
-          { type: 'text', position: { x: -18, y: 16 }, text: '−', fontSize: 12, stroke: '#2176B7' },
-          { type: 'polyline', points: [{ x: 5, y: -10 }, { x: 17, y: 0 }, { x: 5, y: 10 }], stroke: '#2176B7', strokeWidth: 1.5, closed: true },
+          { type: 'rectangle', start: { x: -30, y: -20 }, end: { x: 30, y: 20 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'text', position: { x: -22, y: -10 }, text: '+', fontSize: 12, stroke: '#2176B7' },
+          { type: 'text', position: { x: -22, y: 16 }, text: '−', fontSize: 12, stroke: '#2176B7' },
+          { type: 'polyline', points: [{ x: 8, y: -10 }, { x: 22, y: 0 }, { x: 8, y: 10 }], stroke: '#2176B7', strokeWidth: 1.5, closed: true },
         ],
         pins: [
-          { number: '2', name: 'IN+', position: { x: -55, y: -10 }, length: 30, direction: 0, electricalType: 'input' },
-          { number: '3', name: 'IN-', position: { x: -55, y: 10 }, length: 30, direction: 0, electricalType: 'input' },
-          { number: '6', name: 'OUT', position: { x: 55, y: 0 }, length: 30, direction: 180, electricalType: 'output' },
-          { number: '7', name: 'V+', position: { x: 0, y: -35 }, length: 15, direction: 270, electricalType: 'power_in' },
-          { number: '4', name: 'V-', position: { x: 0, y: 35 }, length: 15, direction: 90, electricalType: 'power_in' },
+          { number: '2', name: 'IN+', position: { x: -60, y: -10 }, length: 30, direction: 0, electricalType: 'input' },
+          { number: '3', name: 'IN-', position: { x: -60, y: 10 }, length: 30, direction: 0, electricalType: 'input' },
+          { number: '6', name: 'OUT', position: { x: 60, y: 0 }, length: 30, direction: 180, electricalType: 'output' },
+          { number: '7', name: 'V+', position: { x: 0, y: -40 }, length: 20, direction: 90, electricalType: 'power_in' },
+          { number: '4', name: 'V-', position: { x: 0, y: 40 }, length: 20, direction: 270, electricalType: 'power_in' },
         ],
       },
       footprint: {
@@ -889,29 +889,29 @@ function createICs(): ComponentDefinition[] {
       keywords: ['atmega', 'arduino', 'microcontroller', 'avr'],
       symbol: {
         graphics: [
-          { type: 'rectangle', start: { x: -50, y: -100 }, end: { x: 50, y: 100 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'rectangle', start: { x: -50, y: -100 }, end: { x: 50, y: 140 }, stroke: '#2176B7', strokeWidth: 2 },
           { type: 'text', position: { x: 0, y: 0 }, text: 'ATmega328P', fontSize: 8, anchor: 'middle', stroke: '#ffffff' },
         ],
         pins: [
-          { number: '1', name: 'PC6/RST', position: { x: -80, y: -85 }, length: 30, direction: 0, electricalType: 'bidirectional' },
+          { number: '1', name: 'PC6/RST', position: { x: -80, y: -90 }, length: 30, direction: 0, electricalType: 'bidirectional' },
           { number: '2', name: 'PD0/RXD', position: { x: -80, y: -70 }, length: 30, direction: 0, electricalType: 'bidirectional' },
-          { number: '3', name: 'PD1/TXD', position: { x: -80, y: -55 }, length: 30, direction: 0, electricalType: 'bidirectional' },
-          { number: '7', name: 'VCC', position: { x: -80, y: -40 }, length: 30, direction: 0, electricalType: 'power_in' },
-          { number: '8', name: 'GND', position: { x: -80, y: -25 }, length: 30, direction: 0, electricalType: 'power_in' },
-          { number: '9', name: 'XTAL1', position: { x: -80, y: -10 }, length: 30, direction: 0, electricalType: 'input' },
-          { number: '10', name: 'XTAL2', position: { x: -80, y: 5 }, length: 30, direction: 0, electricalType: 'output' },
-          { number: '14', name: 'PB0', position: { x: 80, y: -85 }, length: 30, direction: 180, electricalType: 'bidirectional' },
+          { number: '3', name: 'PD1/TXD', position: { x: -80, y: -50 }, length: 30, direction: 0, electricalType: 'bidirectional' },
+          { number: '7', name: 'VCC', position: { x: -80, y: -30 }, length: 30, direction: 0, electricalType: 'power_in' },
+          { number: '8', name: 'GND', position: { x: -80, y: -10 }, length: 30, direction: 0, electricalType: 'power_in' },
+          { number: '9', name: 'XTAL1', position: { x: -80, y: 10 }, length: 30, direction: 0, electricalType: 'input' },
+          { number: '10', name: 'XTAL2', position: { x: -80, y: 30 }, length: 30, direction: 0, electricalType: 'output' },
+          { number: '14', name: 'PB0', position: { x: 80, y: -90 }, length: 30, direction: 180, electricalType: 'bidirectional' },
           { number: '15', name: 'PB1', position: { x: 80, y: -70 }, length: 30, direction: 180, electricalType: 'bidirectional' },
-          { number: '16', name: 'PB2', position: { x: 80, y: -55 }, length: 30, direction: 180, electricalType: 'bidirectional' },
-          { number: '17', name: 'PB3/MOSI', position: { x: 80, y: -40 }, length: 30, direction: 180, electricalType: 'bidirectional' },
-          { number: '18', name: 'PB4/MISO', position: { x: 80, y: -25 }, length: 30, direction: 180, electricalType: 'bidirectional' },
-          { number: '19', name: 'PB5/SCK', position: { x: 80, y: -10 }, length: 30, direction: 180, electricalType: 'bidirectional' },
-          { number: '23', name: 'PC0/ADC0', position: { x: 80, y: 20 }, length: 30, direction: 180, electricalType: 'bidirectional' },
-          { number: '24', name: 'PC1/ADC1', position: { x: 80, y: 35 }, length: 30, direction: 180, electricalType: 'bidirectional' },
-          { number: '25', name: 'PC2/ADC2', position: { x: 80, y: 50 }, length: 30, direction: 180, electricalType: 'bidirectional' },
-          { number: '26', name: 'PC3/ADC3', position: { x: 80, y: 65 }, length: 30, direction: 180, electricalType: 'bidirectional' },
-          { number: '27', name: 'PC4/SDA', position: { x: 80, y: 80 }, length: 30, direction: 180, electricalType: 'bidirectional' },
-          { number: '28', name: 'PC5/SCL', position: { x: 80, y: 95 }, length: 30, direction: 180, electricalType: 'bidirectional' },
+          { number: '16', name: 'PB2', position: { x: 80, y: -50 }, length: 30, direction: 180, electricalType: 'bidirectional' },
+          { number: '17', name: 'PB3/MOSI', position: { x: 80, y: -30 }, length: 30, direction: 180, electricalType: 'bidirectional' },
+          { number: '18', name: 'PB4/MISO', position: { x: 80, y: -10 }, length: 30, direction: 180, electricalType: 'bidirectional' },
+          { number: '19', name: 'PB5/SCK', position: { x: 80, y: 10 }, length: 30, direction: 180, electricalType: 'bidirectional' },
+          { number: '23', name: 'PC0/ADC0', position: { x: 80, y: 30 }, length: 30, direction: 180, electricalType: 'bidirectional' },
+          { number: '24', name: 'PC1/ADC1', position: { x: 80, y: 50 }, length: 30, direction: 180, electricalType: 'bidirectional' },
+          { number: '25', name: 'PC2/ADC2', position: { x: 80, y: 70 }, length: 30, direction: 180, electricalType: 'bidirectional' },
+          { number: '26', name: 'PC3/ADC3', position: { x: 80, y: 90 }, length: 30, direction: 180, electricalType: 'bidirectional' },
+          { number: '27', name: 'PC4/SDA', position: { x: 80, y: 110 }, length: 30, direction: 180, electricalType: 'bidirectional' },
+          { number: '28', name: 'PC5/SCL', position: { x: 80, y: 130 }, length: 30, direction: 180, electricalType: 'bidirectional' },
         ],
       },
       footprint: {
@@ -950,11 +950,11 @@ function createConnectors(): ComponentDefinition[] {
       keywords: ['header', 'pin', 'connector', 'J'],
       symbol: {
         graphics: [
-          { type: 'rectangle', start: { x: -10, y: -15 }, end: { x: 10, y: 15 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'rectangle', start: { x: -10, y: -18 }, end: { x: 10, y: 18 }, stroke: '#2176B7', strokeWidth: 2 },
         ],
         pins: [
-          { number: '1', name: '1', position: { x: -40, y: -8 }, length: 30, direction: 0, electricalType: 'passive' },
-          { number: '2', name: '2', position: { x: -40, y: 8 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '1', name: '1', position: { x: -40, y: -10 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '2', name: '2', position: { x: -40, y: 10 }, length: 30, direction: 0, electricalType: 'passive' },
         ],
       },
       footprint: {
@@ -979,13 +979,13 @@ function createConnectors(): ComponentDefinition[] {
       keywords: ['header', 'pin', 'connector'],
       symbol: {
         graphics: [
-          { type: 'rectangle', start: { x: -10, y: -25 }, end: { x: 10, y: 25 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'rectangle', start: { x: -10, y: -38 }, end: { x: 10, y: 38 }, stroke: '#2176B7', strokeWidth: 2 },
         ],
         pins: [
-          { number: '1', name: '1', position: { x: -40, y: -18 }, length: 30, direction: 0, electricalType: 'passive' },
-          { number: '2', name: '2', position: { x: -40, y: -6 }, length: 30, direction: 0, electricalType: 'passive' },
-          { number: '3', name: '3', position: { x: -40, y: 6 }, length: 30, direction: 0, electricalType: 'passive' },
-          { number: '4', name: '4', position: { x: -40, y: 18 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '1', name: '1', position: { x: -40, y: -30 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '2', name: '2', position: { x: -40, y: -10 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '3', name: '3', position: { x: -40, y: 10 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '4', name: '4', position: { x: -40, y: 30 }, length: 30, direction: 0, electricalType: 'passive' },
         ],
       },
       footprint: {
@@ -1012,12 +1012,12 @@ function createConnectors(): ComponentDefinition[] {
       keywords: ['header', 'pin', 'connector', '3-pin'],
       symbol: {
         graphics: [
-          { type: 'rectangle', start: { x: -10, y: -20 }, end: { x: 10, y: 20 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'rectangle', start: { x: -10, y: -28 }, end: { x: 10, y: 28 }, stroke: '#2176B7', strokeWidth: 2 },
         ],
         pins: [
-          { number: '1', name: '1', position: { x: -40, y: -12 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '1', name: '1', position: { x: -40, y: -20 }, length: 30, direction: 0, electricalType: 'passive' },
           { number: '2', name: '2', position: { x: -40, y: 0 }, length: 30, direction: 0, electricalType: 'passive' },
-          { number: '3', name: '3', position: { x: -40, y: 12 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '3', name: '3', position: { x: -40, y: 20 }, length: 30, direction: 0, electricalType: 'passive' },
         ],
       },
       footprint: {
@@ -1043,15 +1043,15 @@ function createConnectors(): ComponentDefinition[] {
       keywords: ['header', 'pin', 'connector', '6-pin'],
       symbol: {
         graphics: [
-          { type: 'rectangle', start: { x: -10, y: -35 }, end: { x: 10, y: 35 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'rectangle', start: { x: -10, y: -58 }, end: { x: 10, y: 58 }, stroke: '#2176B7', strokeWidth: 2 },
         ],
         pins: [
-          { number: '1', name: '1', position: { x: -40, y: -28 }, length: 30, direction: 0, electricalType: 'passive' },
-          { number: '2', name: '2', position: { x: -40, y: -16 }, length: 30, direction: 0, electricalType: 'passive' },
-          { number: '3', name: '3', position: { x: -40, y: -4 }, length: 30, direction: 0, electricalType: 'passive' },
-          { number: '4', name: '4', position: { x: -40, y: 8 }, length: 30, direction: 0, electricalType: 'passive' },
-          { number: '5', name: '5', position: { x: -40, y: 20 }, length: 30, direction: 0, electricalType: 'passive' },
-          { number: '6', name: '6', position: { x: -40, y: 32 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '1', name: '1', position: { x: -40, y: -50 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '2', name: '2', position: { x: -40, y: -30 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '3', name: '3', position: { x: -40, y: -10 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '4', name: '4', position: { x: -40, y: 10 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '5', name: '5', position: { x: -40, y: 30 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '6', name: '6', position: { x: -40, y: 50 }, length: 30, direction: 0, electricalType: 'passive' },
         ],
       },
       footprint: {
@@ -1077,16 +1077,18 @@ function createConnectors(): ComponentDefinition[] {
       keywords: ['header', 'pin', 'connector', '8-pin'],
       symbol: {
         graphics: [
-          { type: 'rectangle', start: { x: -10, y: -45 }, end: { x: 10, y: 45 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'rectangle', start: { x: -10, y: -78 }, end: { x: 10, y: 78 }, stroke: '#2176B7', strokeWidth: 2 },
         ],
-        pins: Array.from({ length: 8 }, (_, i) => ({
-          number: String(i + 1),
-          name: String(i + 1),
-          position: { x: -40, y: -38 + i * 11 },
-          length: 30,
-          direction: 0 as const,
-          electricalType: 'passive' as const,
-        })),
+        pins: [
+          { number: '1', name: '1', position: { x: -40, y: -70 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '2', name: '2', position: { x: -40, y: -50 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '3', name: '3', position: { x: -40, y: -30 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '4', name: '4', position: { x: -40, y: -10 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '5', name: '5', position: { x: -40, y: 10 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '6', name: '6', position: { x: -40, y: 30 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '7', name: '7', position: { x: -40, y: 50 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '8', name: '8', position: { x: -40, y: 70 }, length: 30, direction: 0, electricalType: 'passive' },
+        ],
       },
       footprint: {
         type: 'through_hole',
@@ -1111,13 +1113,13 @@ function createConnectors(): ComponentDefinition[] {
       keywords: ['screw', 'terminal', 'klemme', 'connector', 'power'],
       symbol: {
         graphics: [
-          { type: 'rectangle', start: { x: -10, y: -15 }, end: { x: 10, y: 15 }, stroke: '#2176B7', strokeWidth: 2 },
-          { type: 'circle', center: { x: 0, y: -8 }, radius: 4, stroke: '#2176B7', strokeWidth: 1.5 },
-          { type: 'circle', center: { x: 0, y: 8 }, radius: 4, stroke: '#2176B7', strokeWidth: 1.5 },
+          { type: 'rectangle', start: { x: -10, y: -18 }, end: { x: 10, y: 18 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'circle', center: { x: 0, y: -10 }, radius: 4, stroke: '#2176B7', strokeWidth: 1.5 },
+          { type: 'circle', center: { x: 0, y: 10 }, radius: 4, stroke: '#2176B7', strokeWidth: 1.5 },
         ],
         pins: [
-          { number: '1', name: '1', position: { x: -40, y: -8 }, length: 30, direction: 0, electricalType: 'passive' },
-          { number: '2', name: '2', position: { x: -40, y: 8 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '1', name: '1', position: { x: -40, y: -10 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '2', name: '2', position: { x: -40, y: 10 }, length: 30, direction: 0, electricalType: 'passive' },
         ],
       },
       footprint: {
@@ -1142,15 +1144,15 @@ function createConnectors(): ComponentDefinition[] {
       keywords: ['screw', 'terminal', 'klemme', 'connector', '3-pin'],
       symbol: {
         graphics: [
-          { type: 'rectangle', start: { x: -10, y: -20 }, end: { x: 10, y: 20 }, stroke: '#2176B7', strokeWidth: 2 },
-          { type: 'circle', center: { x: 0, y: -12 }, radius: 4, stroke: '#2176B7', strokeWidth: 1.5 },
+          { type: 'rectangle', start: { x: -10, y: -28 }, end: { x: 10, y: 28 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'circle', center: { x: 0, y: -20 }, radius: 4, stroke: '#2176B7', strokeWidth: 1.5 },
           { type: 'circle', center: { x: 0, y: 0 }, radius: 4, stroke: '#2176B7', strokeWidth: 1.5 },
-          { type: 'circle', center: { x: 0, y: 12 }, radius: 4, stroke: '#2176B7', strokeWidth: 1.5 },
+          { type: 'circle', center: { x: 0, y: 20 }, radius: 4, stroke: '#2176B7', strokeWidth: 1.5 },
         ],
         pins: [
-          { number: '1', name: '1', position: { x: -40, y: -12 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '1', name: '1', position: { x: -40, y: -20 }, length: 30, direction: 0, electricalType: 'passive' },
           { number: '2', name: '2', position: { x: -40, y: 0 }, length: 30, direction: 0, electricalType: 'passive' },
-          { number: '3', name: '3', position: { x: -40, y: 12 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '3', name: '3', position: { x: -40, y: 20 }, length: 30, direction: 0, electricalType: 'passive' },
         ],
       },
       footprint: {
@@ -1220,10 +1222,10 @@ function createSwitches(): ComponentDefinition[] {
           { type: 'circle', center: { x: 0, y: 0 }, radius: 5, stroke: '#2176B7', strokeWidth: 1.5 },
         ],
         pins: [
-          { number: '1', name: '1', position: { x: -40, y: -8 }, length: 25, direction: 0, electricalType: 'passive' },
-          { number: '2', name: '2', position: { x: 40, y: -8 }, length: 25, direction: 180, electricalType: 'passive' },
-          { number: '3', name: '3', position: { x: -40, y: 8 }, length: 25, direction: 0, electricalType: 'passive' },
-          { number: '4', name: '4', position: { x: 40, y: 8 }, length: 25, direction: 180, electricalType: 'passive' },
+          { number: '1', name: '1', position: { x: -40, y: -10 }, length: 25, direction: 0, electricalType: 'passive' },
+          { number: '2', name: '2', position: { x: 40, y: -10 }, length: 25, direction: 180, electricalType: 'passive' },
+          { number: '3', name: '3', position: { x: -40, y: 10 }, length: 25, direction: 0, electricalType: 'passive' },
+          { number: '4', name: '4', position: { x: 40, y: 10 }, length: 25, direction: 180, electricalType: 'passive' },
         ],
       },
       footprint: {
@@ -1332,13 +1334,13 @@ function createVoltageRegulators(): ComponentDefinition[] {
       keywords: ['7805', 'voltage regulator', 'spannungsregler', '5V', 'LM7805'],
       symbol: {
         graphics: [
-          { type: 'rectangle', start: { x: -25, y: -20 }, end: { x: 25, y: 20 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'rectangle', start: { x: -30, y: -20 }, end: { x: 30, y: 20 }, stroke: '#2176B7', strokeWidth: 2 },
           { type: 'text', position: { x: 0, y: 0 }, text: '7805', fontSize: 10, anchor: 'middle', stroke: '#ffffff' },
         ],
         pins: [
-          { number: '1', name: 'IN', position: { x: -55, y: 0 }, length: 30, direction: 0, electricalType: 'power_in' },
-          { number: '2', name: 'GND', position: { x: 0, y: 35 }, length: 15, direction: 90, electricalType: 'power_in' },
-          { number: '3', name: 'OUT', position: { x: 55, y: 0 }, length: 30, direction: 180, electricalType: 'power_out' },
+          { number: '1', name: 'IN', position: { x: -60, y: 0 }, length: 30, direction: 0, electricalType: 'power_in' },
+          { number: '2', name: 'GND', position: { x: 0, y: 40 }, length: 20, direction: 270, electricalType: 'power_in' },
+          { number: '3', name: 'OUT', position: { x: 60, y: 0 }, length: 30, direction: 180, electricalType: 'power_out' },
         ],
       },
       footprint: {
@@ -1365,13 +1367,13 @@ function createVoltageRegulators(): ComponentDefinition[] {
       keywords: ['7812', 'voltage regulator', 'spannungsregler', '12V'],
       symbol: {
         graphics: [
-          { type: 'rectangle', start: { x: -25, y: -20 }, end: { x: 25, y: 20 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'rectangle', start: { x: -30, y: -20 }, end: { x: 30, y: 20 }, stroke: '#2176B7', strokeWidth: 2 },
           { type: 'text', position: { x: 0, y: 0 }, text: '7812', fontSize: 10, anchor: 'middle', stroke: '#ffffff' },
         ],
         pins: [
-          { number: '1', name: 'IN', position: { x: -55, y: 0 }, length: 30, direction: 0, electricalType: 'power_in' },
-          { number: '2', name: 'GND', position: { x: 0, y: 35 }, length: 15, direction: 90, electricalType: 'power_in' },
-          { number: '3', name: 'OUT', position: { x: 55, y: 0 }, length: 30, direction: 180, electricalType: 'power_out' },
+          { number: '1', name: 'IN', position: { x: -60, y: 0 }, length: 30, direction: 0, electricalType: 'power_in' },
+          { number: '2', name: 'GND', position: { x: 0, y: 40 }, length: 20, direction: 270, electricalType: 'power_in' },
+          { number: '3', name: 'OUT', position: { x: 60, y: 0 }, length: 30, direction: 180, electricalType: 'power_out' },
         ],
       },
       footprint: {
@@ -1398,13 +1400,13 @@ function createVoltageRegulators(): ComponentDefinition[] {
       keywords: ['78L33', 'voltage regulator', '3.3V', 'LDO'],
       symbol: {
         graphics: [
-          { type: 'rectangle', start: { x: -25, y: -20 }, end: { x: 25, y: 20 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'rectangle', start: { x: -30, y: -20 }, end: { x: 30, y: 20 }, stroke: '#2176B7', strokeWidth: 2 },
           { type: 'text', position: { x: 0, y: 0 }, text: '3.3V', fontSize: 10, anchor: 'middle', stroke: '#ffffff' },
         ],
         pins: [
-          { number: '1', name: 'IN', position: { x: -55, y: 0 }, length: 30, direction: 0, electricalType: 'power_in' },
-          { number: '2', name: 'GND', position: { x: 0, y: 35 }, length: 15, direction: 90, electricalType: 'power_in' },
-          { number: '3', name: 'OUT', position: { x: 55, y: 0 }, length: 30, direction: 180, electricalType: 'power_out' },
+          { number: '1', name: 'IN', position: { x: -60, y: 0 }, length: 30, direction: 0, electricalType: 'power_in' },
+          { number: '2', name: 'GND', position: { x: 0, y: 40 }, length: 20, direction: 270, electricalType: 'power_in' },
+          { number: '3', name: 'OUT', position: { x: 60, y: 0 }, length: 30, direction: 180, electricalType: 'power_out' },
         ],
       },
       footprint: {
@@ -1431,13 +1433,13 @@ function createVoltageRegulators(): ComponentDefinition[] {
       keywords: ['lm317', 'adjustable', 'voltage regulator', 'variable'],
       symbol: {
         graphics: [
-          { type: 'rectangle', start: { x: -25, y: -20 }, end: { x: 25, y: 20 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'rectangle', start: { x: -30, y: -20 }, end: { x: 30, y: 20 }, stroke: '#2176B7', strokeWidth: 2 },
           { type: 'text', position: { x: 0, y: 0 }, text: 'LM317', fontSize: 9, anchor: 'middle', stroke: '#ffffff' },
         ],
         pins: [
-          { number: '1', name: 'ADJ', position: { x: 0, y: 35 }, length: 15, direction: 90, electricalType: 'passive' },
-          { number: '2', name: 'OUT', position: { x: 55, y: 0 }, length: 30, direction: 180, electricalType: 'power_out' },
-          { number: '3', name: 'IN', position: { x: -55, y: 0 }, length: 30, direction: 0, electricalType: 'power_in' },
+          { number: '1', name: 'ADJ', position: { x: 0, y: 40 }, length: 20, direction: 270, electricalType: 'passive' },
+          { number: '2', name: 'OUT', position: { x: 60, y: 0 }, length: 30, direction: 180, electricalType: 'power_out' },
+          { number: '3', name: 'IN', position: { x: -60, y: 0 }, length: 30, direction: 0, electricalType: 'power_in' },
         ],
       },
       footprint: {
@@ -1598,15 +1600,15 @@ function createMiscComponents(): ComponentDefinition[] {
       keywords: ['ir', 'infrared', 'infrarot', 'receiver', 'empfänger', 'remote'],
       symbol: {
         graphics: [
-          { type: 'rectangle', start: { x: -15, y: -15 }, end: { x: 15, y: 15 }, stroke: '#2176B7', strokeWidth: 2 },
-          { type: 'line', start: { x: -4, y: -18 }, end: { x: 2, y: -10 }, stroke: '#ff4444', strokeWidth: 1.5 },
-          { type: 'line', start: { x: 0, y: -18 }, end: { x: 6, y: -10 }, stroke: '#ff4444', strokeWidth: 1.5 },
+          { type: 'rectangle', start: { x: -20, y: -18 }, end: { x: 20, y: 18 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'line', start: { x: -4, y: -22 }, end: { x: 2, y: -14 }, stroke: '#ff4444', strokeWidth: 1.5 },
+          { type: 'line', start: { x: 0, y: -22 }, end: { x: 6, y: -14 }, stroke: '#ff4444', strokeWidth: 1.5 },
           { type: 'text', position: { x: 0, y: 3 }, text: 'IR', fontSize: 10, anchor: 'middle', stroke: '#ffffff' },
         ],
         pins: [
-          { number: '1', name: 'OUT', position: { x: -45, y: -8 }, length: 30, direction: 0, electricalType: 'output' },
-          { number: '2', name: 'GND', position: { x: -45, y: 8 }, length: 30, direction: 0, electricalType: 'power_in' },
-          { number: '3', name: 'VCC', position: { x: 45, y: 0 }, length: 30, direction: 180, electricalType: 'power_in' },
+          { number: '1', name: 'OUT', position: { x: -50, y: -10 }, length: 30, direction: 0, electricalType: 'output' },
+          { number: '2', name: 'GND', position: { x: -50, y: 10 }, length: 30, direction: 0, electricalType: 'power_in' },
+          { number: '3', name: 'VCC', position: { x: 50, y: 0 }, length: 30, direction: 180, electricalType: 'power_in' },
         ],
       },
       footprint: {

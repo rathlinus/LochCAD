@@ -5,12 +5,13 @@
 import React, { useRef, useCallback, useState, useMemo, useEffect } from 'react';
 import { Stage, Layer, Circle, Rect, Line, Text, Group } from 'react-konva';
 import type Konva from 'konva';
-import { useProjectStore, usePerfboardStore } from '@/stores';
+import { useProjectStore, usePerfboardStore, useCheckStore } from '@/stores';
 import { getBuiltInComponents, getAdjustedFootprint } from '@/lib/component-library';
 import { COLORS, PERFBOARD_GRID, CATEGORY_PREFIX, nextUniqueReference } from '@/constants';
 import type { GridPosition, PerfboardComponent, PerfboardConnection, ComponentDefinition, FootprintPad } from '@/types';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { findManhattanRoute, getOccupiedHoles, getConnectionOccupiedHoles, solderBridgeCrossesExisting, hasCollision, gridKey, hasFootprintCollision, isAdjacent, insertSupportPoints } from '@/lib/engine/router';
+import { buildNetlist } from '@/lib/engine/netlist';
 
 export default function PerfboardEditor() {
   const stageRef = useRef<Konva.Stage | null>(null);
@@ -18,6 +19,10 @@ export default function PerfboardEditor() {
   const [stageSize, setStageSize] = useState({ width: 800, height: 600 });
   const [mouseGridPos, setMouseGridPos] = useState<GridPosition>({ col: 0, row: 0 });
   const isDraggingComponentRef = useRef(false);
+  const boxSelectStartRef = useRef<GridPosition | null>(null);
+  const dragGroupRef = useRef<{ startPos: GridPosition; ids: string[] } | null>(null);
+  const [selectionBox, setSelectionBox] = useState<{ col: number; row: number; cols: number; rows: number } | null>(null);
+  const [shiftHeld, setShiftHeld] = useState(false);
 
   const [placementRotation, setPlacementRotation] = useState(0);
 
@@ -125,12 +130,178 @@ export default function PerfboardEditor() {
     return hasFootprintCollision(pads, mouseGridPos, placementRotation, compData, libComp.footprint.spanHoles);
   }, [activeTool, placingComponentId, allLib, mouseGridPos, placementRotation, compData]);
 
+  // ---------- Ratsnest (dotted lines for unconnected schematic nets) ----------
+  const ratsnestLines = useMemo(() => {
+    if (!schematic || perfboard.components.length === 0) return [];
+
+    // Build netlist from schematic
+    const netlist = buildNetlist(schematic);
+
+    // Helper: rotate a pad offset given a component rotation
+    const rotatePad = (pad: GridPosition, rotation: number): GridPosition => {
+      const r = ((rotation % 360) + 360) % 360;
+      let c = pad.col, ro = pad.row;
+      if (r === 90) { const t = c; c = -ro; ro = t; }
+      else if (r === 180) { c = -c; ro = -ro; }
+      else if (r === 270) { const t = c; c = ro; ro = -t; }
+      return { col: c, row: ro };
+    };
+
+    // For each perfboard component, build a map: schematicComponentId + pinNumber → grid position
+    const pinGridMap = new Map<string, GridPosition>(); // key: "schCompId:pinNum"
+    for (const pbComp of perfboard.components) {
+      const def = allLib.find((d) => d.id === pbComp.libraryId);
+      if (!def) continue;
+      const { pads } = getAdjustedFootprint(def, pbComp.properties?.holeSpan);
+      for (const pad of pads) {
+        const rotated = rotatePad(pad.gridPosition, pbComp.rotation);
+        const gridPos: GridPosition = {
+          col: pbComp.gridPosition.col + rotated.col,
+          row: pbComp.gridPosition.row + rotated.row,
+        };
+        pinGridMap.set(`${pbComp.schematicComponentId}:${pad.number}`, gridPos);
+      }
+    }
+
+    // Build a union-find of connected grid positions from existing perfboard connections
+    const gk = (pos: GridPosition) => `${pos.col},${pos.row}`;
+    const connParent = new Map<string, string>();
+    const connFind = (k: string): string => {
+      if (!connParent.has(k)) connParent.set(k, k);
+      if (connParent.get(k) !== k) connParent.set(k, connFind(connParent.get(k)!));
+      return connParent.get(k)!;
+    };
+    const connUnion = (a: string, b: string) => {
+      const ra = connFind(a), rb = connFind(b);
+      if (ra !== rb) connParent.set(ra, rb);
+    };
+
+    for (const conn of perfboard.connections) {
+      const fk = gk(conn.from);
+      const tk = gk(conn.to);
+      connUnion(fk, tk);
+      if (conn.waypoints) {
+        for (const wp of conn.waypoints) {
+          connUnion(fk, gk(wp));
+          connUnion(tk, gk(wp));
+        }
+      }
+    }
+
+    // For each net, collect the grid positions of its pins that are placed on the perfboard
+    const lines: { from: GridPosition; to: GridPosition; netName: string }[] = [];
+    for (const net of netlist.nets) {
+      if (net.connections.length < 2) continue;
+
+      // Collect grid positions for pins in this net
+      const pinPositions: GridPosition[] = [];
+      for (const conn of net.connections) {
+        const key = `${conn.componentId}:${conn.pinNumber}`;
+        const gp = pinGridMap.get(key);
+        if (gp) pinPositions.push(gp);
+      }
+      if (pinPositions.length < 2) continue;
+
+      // Group by existing perfboard connectivity
+      const groups = new Map<string, GridPosition[]>();
+      for (const pos of pinPositions) {
+        const root = connFind(gk(pos));
+        if (!groups.has(root)) groups.set(root, []);
+        groups.get(root)!.push(pos);
+      }
+
+      // If all pins are in the same group, net is fully connected
+      if (groups.size <= 1) continue;
+
+      // Connect groups with ratsnest lines (simple chain between group representatives)
+      const groupReps = Array.from(groups.values()).map((g) => g[0]);
+      for (let i = 1; i < groupReps.length; i++) {
+        lines.push({ from: groupReps[i - 1], to: groupReps[i], netName: net.name });
+      }
+    }
+
+    return lines;
+  }, [schematic, perfboard, allLib]);
+
+  // ---------- Net target pin map (grid pos → same-net pin grid positions) ----------
+  // Used to highlight which pins should be connected when drawing from a pin.
+  const netTargetMap = useMemo(() => {
+    const map = new Map<string, GridPosition[]>(); // "col,row" → other pin positions on same net
+    if (!schematic || perfboard.components.length === 0) return map;
+
+    const netlist = buildNetlist(schematic);
+
+    const rotatePadNT = (pad: GridPosition, rotation: number): GridPosition => {
+      const r = ((rotation % 360) + 360) % 360;
+      let c = pad.col, ro = pad.row;
+      if (r === 90) { const t = c; c = -ro; ro = t; }
+      else if (r === 180) { c = -c; ro = -ro; }
+      else if (r === 270) { const t = c; c = ro; ro = -t; }
+      return { col: c, row: ro };
+    };
+
+    const pinGridMapNT = new Map<string, GridPosition>();
+    for (const pbComp of perfboard.components) {
+      const def = allLib.find((d) => d.id === pbComp.libraryId);
+      if (!def) continue;
+      const { pads } = getAdjustedFootprint(def, pbComp.properties?.holeSpan);
+      for (const pad of pads) {
+        const rotated = rotatePadNT(pad.gridPosition, pbComp.rotation);
+        const gridPos: GridPosition = {
+          col: pbComp.gridPosition.col + rotated.col,
+          row: pbComp.gridPosition.row + rotated.row,
+        };
+        pinGridMapNT.set(`${pbComp.schematicComponentId}:${pad.number}`, gridPos);
+      }
+    }
+
+    // For each net, collect placed pin grid positions and cross-reference
+    for (const net of netlist.nets) {
+      if (net.connections.length < 2) continue;
+      const positions: GridPosition[] = [];
+      for (const conn of net.connections) {
+        const gp = pinGridMapNT.get(`${conn.componentId}:${conn.pinNumber}`);
+        if (gp) positions.push(gp);
+      }
+      if (positions.length < 2) continue;
+      // For each pin in this net, store all OTHER pins as targets
+      for (let i = 0; i < positions.length; i++) {
+        const key = `${positions[i].col},${positions[i].row}`;
+        const others = positions.filter((_, j) => j !== i);
+        const existing = map.get(key);
+        if (existing) {
+          existing.push(...others);
+        } else {
+          map.set(key, [...others]);
+        }
+      }
+    }
+
+    return map;
+  }, [schematic, perfboard, allLib]);
+
+  // Highlighted target pins when drawing from a pin
+  const drawingTargetPins = useMemo<GridPosition[]>(() => {
+    if (!isDrawing || !drawingFrom) return [];
+    const key = `${drawingFrom.col},${drawingFrom.row}`;
+    return netTargetMap.get(key) ?? [];
+  }, [isDrawing, drawingFrom, netTargetMap]);
+
   // Auto-scroll edge margin / speed
   const EDGE_MARGIN = 40;
   const SCROLL_SPEED = 8;
 
-  const handleCompDragStart = useCallback(() => {
+  const handleCompDragStart = useCallback((compId: string) => {
     isDraggingComponentRef.current = true;
+    const sel = usePerfboardStore.getState().selectedIds;
+    if (sel.length > 1 && sel.includes(compId)) {
+      const comp = useProjectStore.getState().project.perfboard.components.find((c) => c.id === compId);
+      if (comp) {
+        dragGroupRef.current = { startPos: { ...comp.gridPosition }, ids: [...sel] };
+      }
+    } else {
+      dragGroupRef.current = null;
+    }
   }, []);
 
   const handleCompDragMove = useCallback(() => {
@@ -153,22 +324,43 @@ export default function PerfboardEditor() {
 
   const handleCompDragEnd = useCallback((compId: string, gridPos: GridPosition): boolean => {
     isDraggingComponentRef.current = false;
+
+    const groupInfo = dragGroupRef.current;
+    dragGroupRef.current = null;
+
+    if (groupInfo && groupInfo.ids.length > 1) {
+      const colDelta = gridPos.col - groupInfo.startPos.col;
+      const rowDelta = gridPos.row - groupInfo.startPos.row;
+      if (colDelta !== 0 || rowDelta !== 0) {
+        usePerfboardStore.getState().moveComponentGroup(groupInfo.ids, colDelta, rowDelta);
+      }
+      return true;
+    }
+
     return usePerfboardStore.getState().moveComponent(compId, gridPos);
   }, []);
 
-  // Resize
+  // Resize — use ResizeObserver so canvas updates when panels collapse/expand
   useEffect(() => {
-    const updateSize = () => {
-      if (containerRef.current) {
-        setStageSize({
-          width: containerRef.current.offsetWidth,
-          height: containerRef.current.offsetHeight,
-        });
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        setStageSize({ width, height });
       }
-    };
-    updateSize();
-    window.addEventListener('resize', updateSize);
-    return () => window.removeEventListener('resize', updateSize);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Track shift key for box selection
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Shift') setShiftHeld(true); };
+    const onKeyUp = (e: KeyboardEvent) => { if (e.key === 'Shift') setShiftHeld(false); };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => { window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); };
   }, []);
 
   const gridToPixel = useCallback(
@@ -231,6 +423,17 @@ export default function PerfboardEditor() {
     const gridPos = pixelToGrid(pos.x, pos.y);
     setMouseGridPos(gridPos);
 
+    // Box selection tracking
+    if (boxSelectStartRef.current) {
+      const start = boxSelectStartRef.current;
+      setSelectionBox({
+        col: Math.min(start.col, gridPos.col),
+        row: Math.min(start.row, gridPos.row),
+        cols: Math.abs(gridPos.col - start.col) + 1,
+        rows: Math.abs(gridPos.row - start.row) + 1,
+      });
+    }
+
     if (isDrawing) {
       usePerfboardStore.getState().updateDrawingConnection(gridPos);
 
@@ -252,6 +455,41 @@ export default function PerfboardEditor() {
       }
     }
   }, [getPointerCanvasPos, pixelToGrid, isDrawing, stageSize]);
+
+  // Box selection: start on shift+mouseDown on background
+  const handleMouseDown = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
+    if (e.evt.button !== 0) return;
+    if (activeTool !== 'select' || !e.evt.shiftKey) return;
+    const isBackground = e.target === stageRef.current;
+    if (!isBackground) return;
+    const pos = getPointerCanvasPos();
+    if (pos) {
+      const gridPos = pixelToGrid(pos.x, pos.y);
+      boxSelectStartRef.current = gridPos;
+      setSelectionBox({ col: gridPos.col, row: gridPos.row, cols: 1, rows: 1 });
+      stageRef.current?.stopDrag();
+    }
+  }, [activeTool, getPointerCanvasPos, pixelToGrid]);
+
+  // Box selection: finalize on mouseUp
+  const handleMouseUp = useCallback(() => {
+    if (!boxSelectStartRef.current) return;
+    const box = selectionBox;
+    boxSelectStartRef.current = null;
+    setSelectionBox(null);
+    if (!box || (box.cols <= 1 && box.rows <= 1)) return;
+    const insideIds = perfboard.components
+      .filter((c) =>
+        c.gridPosition.col >= box.col && c.gridPosition.col < box.col + box.cols &&
+        c.gridPosition.row >= box.row && c.gridPosition.row < box.row + box.rows
+      )
+      .map((c) => c.id);
+    if (insideIds.length > 0) {
+      const currentSel = usePerfboardStore.getState().selectedIds;
+      const merged = Array.from(new Set([...currentSel, ...insideIds]));
+      usePerfboardStore.getState().select(merged);
+    }
+  }, [selectionBox, perfboard.components]);
 
   const handleClick = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
     // Ignore right-click (used for rotation)
@@ -313,8 +551,8 @@ export default function PerfboardEditor() {
     }
 
     if (activeTool === 'select') {
-      // Deselect on background click
-      if (e.target === stageRef.current) {
+      // Deselect on background click (only without shift)
+      if (!e.evt.shiftKey && e.target === stageRef.current) {
         usePerfboardStore.getState().clearSelection();
       }
     }
@@ -362,6 +600,12 @@ export default function PerfboardEditor() {
       selectedIds.forEach((id) => usePerfboardStore.getState().rotateComponent(id));
     }
   }, { preventDefault: true, enableOnFormTags: true });
+  // Ctrl+A: select all components
+  useHotkeys('ctrl+a', (e) => {
+    e.preventDefault();
+    const ids = perfboard.components.map((c) => c.id);
+    usePerfboardStore.getState().select(ids);
+  }, { preventDefault: true, enableOnFormTags: true });
 
   // ---- Derived rendering data ----
 
@@ -376,6 +620,8 @@ export default function PerfboardEditor() {
         width={stageSize.width}
         height={stageSize.height}
         onWheel={handleWheel}
+        onMouseDown={handleMouseDown}
+        onMouseUp={handleMouseUp}
         onMouseMove={handleMouseMove}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
@@ -383,7 +629,7 @@ export default function PerfboardEditor() {
         y={viewport.y}
         scaleX={viewport.scale}
         scaleY={viewport.scale}
-        draggable={activeTool === 'select' && !isDrawing && !isDraggingComponentRef.current}
+        draggable={activeTool === 'select' && !isDrawing && !isDraggingComponentRef.current && !shiftHeld}
         onDragEnd={(e) => {
           if (e.target !== stageRef.current) return;
           setViewport({ x: e.target.x(), y: e.target.y() });
@@ -556,6 +802,37 @@ export default function PerfboardEditor() {
           })()}
         </Layer>
 
+        {/* Net target pin highlights — shown when drawing from a pin */}
+        {drawingTargetPins.length > 0 && (
+          <Layer listening={false}>
+            {drawingTargetPins.map((tp, i) => {
+              const px = gridToPixel(tp);
+              return (
+                <React.Fragment key={`ntp-${i}`}>
+                  {/* Outer pulsing ring */}
+                  <Circle
+                    x={px.x}
+                    y={px.y}
+                    radius={10}
+                    stroke="#00ff88"
+                    strokeWidth={2}
+                    dash={[4, 2]}
+                    opacity={0.6}
+                  />
+                  {/* Inner filled dot */}
+                  <Circle
+                    x={px.x}
+                    y={px.y}
+                    radius={5}
+                    fill="#00ff88"
+                    opacity={0.45}
+                  />
+                </React.Fragment>
+              );
+            })}
+          </Layer>
+        )}
+
         {/* Components Layer */}
         <Layer>
           {perfboard.components.map((comp) => {
@@ -570,11 +847,23 @@ export default function PerfboardEditor() {
                 pixelToGrid={pixelToGrid}
                 isSelected={selectedIds.includes(comp.id)}
                 draggable={activeTool === 'select'}
-                onClick={() => {
-                  if (activeTool === 'select') usePerfboardStore.getState().select([comp.id]);
-                  else if (activeTool === 'delete') usePerfboardStore.getState().removeComponent(comp.id);
+                onClick={(e: any) => {
+                  // Only consume event for select / delete — let drawing
+                  // tools propagate so wire drawing works from component pins
+                  if (activeTool === 'select') {
+                    e.cancelBubble = true;
+                    if (e.evt?.shiftKey) {
+                      usePerfboardStore.getState().toggleSelection(comp.id);
+                    } else {
+                      usePerfboardStore.getState().select([comp.id]);
+                    }
+                  } else if (activeTool === 'delete') {
+                    e.cancelBubble = true;
+                    usePerfboardStore.getState().removeComponent(comp.id);
+                  }
+                  // draw_wire / draw_solder_bridge etc. — don't cancel bubble
                 }}
-                onDragStart={handleCompDragStart}
+                onDragStart={() => handleCompDragStart(comp.id)}
                 onDragMove={handleCompDragMove}
                 onDragEnd={(gridPos) => handleCompDragEnd(comp.id, gridPos)}
               />
@@ -582,8 +871,50 @@ export default function PerfboardEditor() {
           })}
         </Layer>
 
+        {/* Ratsnest — dotted lines for unconnected nets */}
+        {ratsnestLines.length > 0 && (
+          <Layer listening={false}>
+            {ratsnestLines.map((rl, i) => {
+              const fromPx = gridToPixel(rl.from);
+              const toPx = gridToPixel(rl.to);
+              return (
+                <React.Fragment key={`ratsnest-${i}`}>
+                  <Line
+                    points={[fromPx.x, fromPx.y, toPx.x, toPx.y]}
+                    stroke="#ffcc00"
+                    strokeWidth={1.2}
+                    dash={[6, 4]}
+                    opacity={0.7}
+                    lineCap="round"
+                  />
+                  {/* Small dot at each end */}
+                  <Circle x={fromPx.x} y={fromPx.y} radius={2.5} fill="#ffcc00" opacity={0.8} />
+                  <Circle x={toPx.x} y={toPx.y} radius={2.5} fill="#ffcc00" opacity={0.8} />
+                </React.Fragment>
+              );
+            })}
+          </Layer>
+        )}
+
         {/* Overlay */}
         <Layer listening={false}>
+          {/* Selection box */}
+          {selectionBox && (() => {
+            const topLeft = gridToPixel({ col: selectionBox.col, row: selectionBox.row });
+            const botRight = gridToPixel({ col: selectionBox.col + selectionBox.cols - 1, row: selectionBox.row + selectionBox.rows - 1 });
+            return (
+              <Rect
+                x={topLeft.x - PERFBOARD_GRID / 2}
+                y={topLeft.y - PERFBOARD_GRID / 2}
+                width={botRight.x - topLeft.x + PERFBOARD_GRID}
+                height={botRight.y - topLeft.y + PERFBOARD_GRID}
+                fill="rgba(0, 140, 255, 0.08)"
+                stroke="rgba(0, 140, 255, 0.5)"
+                strokeWidth={1}
+                dash={[6, 3]}
+              />
+            );
+          })()}
           {/* Cursor highlight */}
           {mouseGridPos.col >= 0 && mouseGridPos.col < perfboard.width &&
             mouseGridPos.row >= 0 && mouseGridPos.row < perfboard.height && (
@@ -681,6 +1012,9 @@ export default function PerfboardEditor() {
             opacity={0.5}
           />
         </Layer>
+
+        {/* DRC Error Highlighting Overlay */}
+        <DRCOverlayLayer />
       </Stage>
 
       {/* Tool hint */}
@@ -795,7 +1129,7 @@ const PerfboardComponentRenderer: React.FC<{
   pixelToGrid: (x: number, y: number) => GridPosition;
   isSelected: boolean;
   draggable?: boolean;
-  onClick: () => void;
+  onClick: (e: any) => void;
   onDragStart?: () => void;
   onDragMove?: () => void;
   onDragEnd?: (gridPos: GridPosition) => boolean | void;
@@ -933,3 +1267,90 @@ const PerfboardComponentRenderer: React.FC<{
 });
 
 PerfboardComponentRenderer.displayName = 'PerfboardComponentRenderer';
+
+// ---- DRC Error Overlay ----
+
+const DRCOverlayLayer: React.FC = React.memo(() => {
+  const activeCheck = useCheckStore((s) => s.activeCheck);
+  const drcResult = useCheckStore((s) => s.drcResult);
+  const highlightedId = useCheckStore((s) => s.highlightedViolationId);
+
+  if (activeCheck !== 'drc' || !drcResult) return null;
+
+  const violations = drcResult.violations;
+
+  return (
+    <Layer name="drc-overlay" listening={false}>
+      {violations.map((v) => {
+        if (!v.position || !('col' in v.position)) return null;
+        const isActive = highlightedId === v.id;
+        const color = v.severity === 'error' ? COLORS.errorMarker
+          : v.severity === 'warning' ? COLORS.warningMarker
+          : '#4fc3f7';
+        const px = (v.position.col + 1) * PERFBOARD_GRID;
+        const py = (v.position.row + 1) * PERFBOARD_GRID;
+        const size = isActive ? 16 : 10;
+        const opacity = isActive ? 1 : 0.7;
+
+        return (
+          <Group key={v.id}>
+            {/* Outer ring */}
+            <Circle
+              x={px}
+              y={py}
+              radius={size}
+              fill={color}
+              opacity={opacity * 0.15}
+            />
+            <Circle
+              x={px}
+              y={py}
+              radius={size * 0.6}
+              fill={color}
+              opacity={opacity * 0.3}
+            />
+            {/* Cross */}
+            <Line
+              points={[px - 4, py - 4, px + 4, py + 4]}
+              stroke={color}
+              strokeWidth={isActive ? 2.5 : 1.5}
+              opacity={opacity}
+            />
+            <Line
+              points={[px + 4, py - 4, px - 4, py + 4]}
+              stroke={color}
+              strokeWidth={isActive ? 2.5 : 1.5}
+              opacity={opacity}
+            />
+            {/* Tooltip for highlighted */}
+            {isActive && (
+              <>
+                <Rect
+                  x={px + 14}
+                  y={py - 10}
+                  width={Math.min(v.message.length * 5.2, 220)}
+                  height={16}
+                  fill="rgba(0,0,0,0.85)"
+                  cornerRadius={3}
+                />
+                <Text
+                  x={px + 17}
+                  y={py - 7}
+                  text={v.message}
+                  fontSize={9}
+                  fontFamily="JetBrains Mono, monospace"
+                  fill={color}
+                  width={220}
+                  ellipsis
+                  wrap="none"
+                />
+              </>
+            )}
+          </Group>
+        );
+      })}
+    </Layer>
+  );
+});
+
+DRCOverlayLayer.displayName = 'DRCOverlayLayer';

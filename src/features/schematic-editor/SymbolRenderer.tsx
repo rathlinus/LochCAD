@@ -7,6 +7,54 @@ import { Group, Rect, Line, Circle, Arc, Text, Ellipse } from 'react-konva';
 import type { ComponentSymbol, SymbolGraphic, PinDefinition, Point } from '@/types';
 import { COLORS, PIN_TYPE_COLORS, SCHEMATIC_GRID } from '@/constants';
 
+/** Compute the bounding box of a symbol from its graphics and pins */
+function getSymbolBounds(symbol: ComponentSymbol): { x: number; y: number; width: number; height: number } {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const expand = (x: number, y: number) => {
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  };
+  // Include pin connection points and body-side endpoints
+  for (const pin of symbol.pins) {
+    expand(pin.position.x, pin.position.y);
+    const angle = (pin.direction * Math.PI) / 180;
+    expand(
+      pin.position.x + Math.cos(angle) * pin.length,
+      pin.position.y + Math.sin(angle) * pin.length,
+    );
+  }
+  // Include graphics extents
+  for (const g of symbol.graphics) {
+    switch (g.type) {
+      case 'line':
+        expand(g.start.x, g.start.y);
+        expand(g.end.x, g.end.y);
+        break;
+      case 'rectangle':
+        expand(g.start.x, g.start.y);
+        expand(g.end.x, g.end.y);
+        break;
+      case 'circle':
+        expand(g.center.x - g.radius, g.center.y - g.radius);
+        expand(g.center.x + g.radius, g.center.y + g.radius);
+        break;
+      case 'arc':
+        expand(g.center.x - g.radius, g.center.y - g.radius);
+        expand(g.center.x + g.radius, g.center.y + g.radius);
+        break;
+      case 'polyline':
+        for (const p of g.points) expand(p.x, p.y);
+        break;
+    }
+  }
+  // Fallback if empty
+  if (minX > maxX) { minX = -45; maxX = 45; minY = -45; maxY = 45; }
+  const pad = 5;
+  return { x: minX - pad, y: minY - pad, width: maxX - minX + 2 * pad, height: maxY - minY + 2 * pad };
+}
+
 interface SymbolRendererProps {
   symbol: ComponentSymbol;
   x: number;
@@ -18,7 +66,7 @@ interface SymbolRendererProps {
   isSelected?: boolean;
   isHovered?: boolean;
   isDimmed?: boolean;
-  onClick?: () => void;
+  onClick?: (e: any) => void;
   onDblClick?: () => void;
   onDragStart?: () => void;
   onDragMove?: () => void;
@@ -81,20 +129,23 @@ export const SymbolRenderer: React.FC<SymbolRendererProps> = React.memo(({
       onDragEnd={handleDragEnd}
     >
       {/* Selection highlight */}
-      {isSelected && (
-        <Rect
-          x={-45}
-          y={-45}
-          width={90}
-          height={90}
-          fill={COLORS.selectedFill}
-          stroke={COLORS.selected}
-          strokeWidth={1}
-          dash={[4, 4]}
-          cornerRadius={4}
-          listening={false}
-        />
-      )}
+      {isSelected && (() => {
+        const bounds = getSymbolBounds(symbol);
+        return (
+          <Rect
+            x={bounds.x}
+            y={bounds.y}
+            width={bounds.width}
+            height={bounds.height}
+            fill={COLORS.selectedFill}
+            stroke={COLORS.selected}
+            strokeWidth={1}
+            dash={[4, 4]}
+            cornerRadius={4}
+            listening={false}
+          />
+        );
+      })()}
 
       {/* Graphics */}
       {symbol.graphics.map((g, i) => (

@@ -437,18 +437,44 @@ export interface SheetDocument {
   perfboard: PerfboardDocument;
 }
 
+export interface ProjectNote {
+  id: string;
+  title: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Project {
   id: string;
   name: string;
+  description: string;
   version: string;
   createdAt: string;
   updatedAt: string;
+  author: string;
+  tags: string[];
+  notes: ProjectNote[];
   schematic: SchematicDocument;
   perfboard: PerfboardDocument;
   sheets: SheetDocument[]; // multi-sheet support
   componentLibrary: ComponentDefinition[];
   customComponents?: ComponentDefinition[];
   netlist: Netlist;
+}
+
+/** Lightweight entry stored in the project index (no heavy data). */
+export interface ProjectListEntry {
+  id: string;
+  name: string;
+  description: string;
+  author: string;
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+  noteCount: number;
+  componentCount: number;
+  sheetCount: number;
 }
 
 // ---- Editor State Types ----

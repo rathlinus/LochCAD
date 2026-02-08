@@ -8,4 +8,6 @@ export {
   hasAutoSavedProject,
   clearAutoSave,
   getAutoSaveTimestamp,
+  exportNotesAsMarkdown,
+  importNotes,
 } from './project-file';
