@@ -292,10 +292,17 @@ export function TopBar() {
   }, [project.name]);
 
   const handleExportBomHtml = useCallback(() => {
-    const sch = useProjectStore.getState().project.schematic;
-    const bom = generateBOM(sch);
-    const html = bomToHtml(bom);
-    downloadTextFile(html, `${project.name}_BOM.html`, 'text/html');
+    const proj = useProjectStore.getState().project;
+    const bom = generateBOM(proj.schematic);
+    const html = bomToHtml(bom, {
+      name: proj.name,
+      description: proj.description,
+      author: proj.author,
+      version: proj.version,
+      createdAt: proj.createdAt,
+      sheetCount: (proj.sheets?.length || 0) + 1,
+    });
+    downloadTextFile(html, `${proj.name}_BOM.html`, 'text/html');
     useToastStore.getState().showToast(`Stückliste (HTML) exportiert`, 'success');
   }, [project.name]);
 

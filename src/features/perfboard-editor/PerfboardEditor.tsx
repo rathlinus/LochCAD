@@ -599,16 +599,16 @@ export default function PerfboardEditor() {
       usePerfboardStore.getState().clearSelection();
       setPlacementRotation(0);
     }
-  });
-  useHotkeys('w', () => usePerfboardStore.getState().setActiveTool('draw_wire'));
-  useHotkeys('delete', () => usePerfboardStore.getState().deleteSelected());
+  }, { preventDefault: true });
+  useHotkeys('w', () => usePerfboardStore.getState().setActiveTool('draw_wire'), { preventDefault: true });
+  useHotkeys('delete, backspace', () => usePerfboardStore.getState().deleteSelected(), { preventDefault: true });
   useHotkeys('r', () => {
     if (activeTool === 'place_component') {
       setPlacementRotation((r) => ((r + 90) % 360));
     } else {
       selectedIds.forEach((id) => usePerfboardStore.getState().rotateComponent(id));
     }
-  });
+  }, { preventDefault: true });
   // Ctrl+R: rotate instead of browser refresh
   useHotkeys('ctrl+r', (e) => {
     e.preventDefault();
@@ -617,12 +617,6 @@ export default function PerfboardEditor() {
     } else {
       selectedIds.forEach((id) => usePerfboardStore.getState().rotateComponent(id));
     }
-  }, { preventDefault: true, enableOnFormTags: true });
-  // Ctrl+A: select all components
-  useHotkeys('ctrl+a', (e) => {
-    e.preventDefault();
-    const ids = perfboard.components.map((c) => c.id);
-    usePerfboardStore.getState().select(ids);
   }, { preventDefault: true, enableOnFormTags: true });
 
   // ---- Derived rendering data ----

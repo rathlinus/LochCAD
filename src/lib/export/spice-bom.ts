@@ -123,46 +123,281 @@ export function bomToCsv(bom: BOMEntry[]): string {
   return [header, ...rows].join('\n');
 }
 
-export function bomToHtml(bom: BOMEntry[]): string {
+export interface BOMProjectInfo {
+  name: string;
+  description?: string;
+  author?: string;
+  version?: string;
+  createdAt?: string;
+  sheetCount?: number;
+}
+
+export function bomToHtml(bom: BOMEntry[], info?: BOMProjectInfo): string {
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const totalParts = bom.reduce((s, e) => s + e.quantity, 0);
+  const totalPositions = bom.length;
+  const projName = info?.name || 'Unbenanntes Projekt';
+  const projDesc = info?.description || '';
+  const projAuthor = info?.author || '';
+  const projVersion = info?.version || '1.0';
+  const projCreated = info?.createdAt
+    ? new Date(info.createdAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    : '';
+  const sheetCount = info?.sheetCount ?? 1;
+
+  const rows = bom.map((e, i) => `
+          <tr>
+            <td class="c">${i + 1}</td>
+            <td class="c">${e.quantity}</td>
+            <td>${e.reference}</td>
+            <td>${e.value}</td>
+            <td>${e.description}</td>
+            <td>${e.footprint}</td>
+            <td></td>
+          </tr>`).join('');
+
+  // DIN EN ISO 7200 + DIN 6771 compliant Schriftfeld & parts list
   return `<!DOCTYPE html>
-<html>
+<html lang="de">
 <head>
   <meta charset="utf-8">
-  <title>LochCAD Stückliste</title>
+  <title>Stueckliste - ${projName}</title>
   <style>
-    body { font-family: 'Segoe UI', sans-serif; padding: 20px; background: #f5f5f5; }
-    h1 { color: #1b1f2b; }
-    table { border-collapse: collapse; width: 100%; background: white; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-    th { background: #2176B7; color: white; padding: 10px; text-align: left; }
-    td { padding: 8px 10px; border-bottom: 1px solid #eee; }
-    tr:hover { background: #f0f8ff; }
-    .total { font-weight: bold; background: #e8f5e9; }
+    /* ---- Reset ---- */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ---- Base ---- */
+    html { font-size: 9pt; }
+    body {
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      color: #000;
+      background: #c0c0c0;
+      padding: 10mm;
+    }
+
+    /* ---- A4 Drawing Sheet ---- */
+    .sheet {
+      width: 210mm;
+      min-height: 297mm;
+      margin: 0 auto;
+      background: #fff;
+      position: relative;
+    }
+
+    /*  Drawing frame – uses padding to create DIN 6771-1 margins:
+        20mm left (binding edge), 10mm top/right/bottom.
+        The frame border sits on the inner edge of that padding. */
+    .frame {
+      margin: 10mm 10mm 10mm 20mm;
+      border: 0.7mm solid #000;
+      /* Use flex column so the Schriftfeld is pushed to the bottom */
+      display: flex;
+      flex-direction: column;
+      /* Frame inner height = 297 - 10 - 10 = 277mm minus border */
+      min-height: calc(297mm - 10mm - 10mm - 1.4mm);
+    }
+
+    /* Content area grows to fill available space */
+    .content {
+      flex: 1 1 auto;
+      padding: 5mm;
+    }
+
+    /* ================================================================
+       Schriftfeld (Title Block) – DIN EN ISO 7200 / DIN 6771-5
+       Sits at the bottom of the frame via flex layout.
+       ================================================================ */
+    .schriftfeld {
+      flex: 0 0 auto;
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 7.5pt;
+      line-height: 1.3;
+    }
+
+    .schriftfeld td {
+      border: 0.35mm solid #000;
+      padding: 1.2mm 2mm;
+      vertical-align: middle;
+    }
+
+    /* Thick top border separating parts list from Schriftfeld */
+    .schriftfeld tr.sf-top td {
+      border-top: 0.7mm solid #000;
+    }
+
+    .schriftfeld .label {
+      font-size: 6pt;
+      color: #555;
+      display: block;
+      margin-bottom: 0.3mm;
+    }
+
+    .schriftfeld .val {
+      font-size: 8pt;
+      font-weight: 600;
+      color: #000;
+    }
+
+    .schriftfeld .val-lg {
+      font-size: 12pt;
+      font-weight: 700;
+      color: #000;
+    }
+
+    .schriftfeld .val-md {
+      font-size: 9pt;
+      font-weight: 600;
+      color: #000;
+    }
+
+    .schriftfeld .org-cell {
+      text-align: center;
+      font-size: 9pt;
+      font-weight: 700;
+      color: #000;
+      letter-spacing: 0.08em;
+    }
+
+    /* ================================================================
+       Parts List (Stueckliste) – DIN 6771-2
+       ================================================================ */
+    .bom-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 8pt;
+      border: 0.7mm solid #000;
+    }
+
+    .bom-table th,
+    .bom-table td {
+      border: 0.35mm solid #000;
+      padding: 1.5mm 2.5mm;
+      vertical-align: middle;
+    }
+
+    .bom-table thead th {
+      background: #e8e8e8;
+      color: #000;
+      font-weight: 700;
+      font-size: 7pt;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      text-align: center;
+      padding: 2mm 2mm;
+    }
+
+    .bom-table thead {
+      border-bottom: 0.7mm solid #000;
+    }
+
+    .bom-table tbody td {
+      font-size: 8pt;
+    }
+
+    .bom-table .c { text-align: center; }
+
+    .bom-table .col-pos  { width: 7%; }
+    .bom-table .col-qty  { width: 7%; }
+    .bom-table .col-ref  { width: 13%; }
+    .bom-table .col-val  { width: 15%; }
+    .bom-table .col-desc { width: 30%; }
+    .bom-table .col-fp   { width: 15%; }
+    .bom-table .col-rem  { width: 13%; }
+
+    .bom-table tfoot td {
+      border-top: 0.7mm solid #000;
+      font-weight: 700;
+      font-size: 8pt;
+      padding: 2mm 2.5mm;
+    }
+
+    /* ---- Print ---- */
+    @media print {
+      html, body {
+        background: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        width: 210mm;
+        height: 297mm;
+      }
+      .sheet {
+        width: 210mm;
+        min-height: 297mm;
+        margin: 0;
+        box-shadow: none;
+      }
+      .frame {
+        min-height: calc(297mm - 10mm - 10mm - 1.4mm);
+      }
+      /* Ensure backgrounds print */
+      .bom-table thead th {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      @page {
+        size: 210mm 297mm;
+        margin: 0;
+      }
+    }
   </style>
 </head>
 <body>
-  <h1>🔌 LochCAD — Stückliste (BOM)</h1>
-  <p>Erstellt am: ${new Date().toLocaleDateString('de-DE')}</p>
-  <table>
-    <tr>
-      <th>Referenz</th>
-      <th>Wert</th>
-      <th>Beschreibung</th>
-      <th>Footprint</th>
-      <th>Anzahl</th>
-    </tr>
-    ${bom.map(e => `
-    <tr>
-      <td>${e.reference}</td>
-      <td>${e.value}</td>
-      <td>${e.description}</td>
-      <td>${e.footprint}</td>
-      <td>${e.quantity}</td>
-    </tr>`).join('')}
-    <tr class="total">
-      <td colspan="4">Gesamt</td>
-      <td>${bom.reduce((s, e) => s + e.quantity, 0)}</td>
-    </tr>
-  </table>
+  <div class="sheet">
+    <div class="frame">
+
+      <!-- Parts list content area -->
+      <div class="content">
+        <table class="bom-table">
+          <thead>
+            <tr>
+              <th class="col-pos">Pos.</th>
+              <th class="col-qty">Menge</th>
+              <th class="col-ref">Referenz</th>
+              <th class="col-val">Benennung</th>
+              <th class="col-desc">Beschreibung</th>
+              <th class="col-fp">Bauform</th>
+              <th class="col-rem">Bemerkung</th>
+            </tr>
+          </thead>
+          <tbody>${rows}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="6" style="text-align:right;">Gesamtanzahl Bauteile</td>
+              <td class="c">${totalParts}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <!-- Schriftfeld (Title Block) – DIN EN ISO 7200 -->
+      <table class="schriftfeld">
+        <tr class="sf-top">
+          <td rowspan="4" style="width:22%;" class="org-cell">LochCAD</td>
+          <td style="width:13%;"><span class="label">Verantwortl. Abt.</span><span class="val">Entwicklung</span></td>
+          <td colspan="3" style="width:43%;"><span class="label">Benennung</span><span class="val-lg">${projName}</span></td>
+          <td rowspan="2" style="width:22%;"><span class="label">Dokumentenart</span><span class="val-md">Stueckliste</span></td>
+        </tr>
+        <tr>
+          <td><span class="label">Erstellt von</span><span class="val">${projAuthor}</span></td>
+          <td colspan="3"><span class="label">Beschreibung</span><span class="val">${projDesc}</span></td>
+        </tr>
+        <tr>
+          <td><span class="label">Erstellt am</span><span class="val">${projCreated}</span></td>
+          <td><span class="label">Druckdatum</span><span class="val">${dateStr}</span></td>
+          <td><span class="label">Version</span><span class="val">${projVersion}</span></td>
+          <td><span class="label">Positionen</span><span class="val">${totalPositions}</span></td>
+          <td><span class="label">Blatt</span><span class="val">1 / ${sheetCount}</span></td>
+        </tr>
+        <tr>
+          <td colspan="5" style="font-size:6pt; color:#777;">Stueckliste nach DIN EN 82045 / DIN 6771-2&emsp;|&emsp;Schriftfeld nach DIN EN ISO 7200</td>
+        </tr>
+      </table>
+
+    </div>
+  </div>
 </body>
 </html>`;
 }

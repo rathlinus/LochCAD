@@ -473,10 +473,10 @@ export default function SchematicEditor() {
       setPlacementRotation(0);
       setPlacementMirror(false);
     }
-  });
-  useHotkeys('w', () => useSchematicStore.getState().setActiveTool('draw_wire'));
-  useHotkeys('l', () => useSchematicStore.getState().setActiveTool('place_label'));
-  useHotkeys('delete', () => useSchematicStore.getState().deleteSelected());
+  }, { preventDefault: true });
+  useHotkeys('w', () => useSchematicStore.getState().setActiveTool('draw_wire'), { preventDefault: true });
+  useHotkeys('l', () => useSchematicStore.getState().setActiveTool('place_label'), { preventDefault: true });
+  useHotkeys('delete, backspace', () => useSchematicStore.getState().deleteSelected(), { preventDefault: true });
   useHotkeys('r', () => {
     if (activeTool === 'place_component') {
       setPlacementRotation((r) => ((r + 90) % 360));
@@ -484,7 +484,7 @@ export default function SchematicEditor() {
       const sel = useSchematicStore.getState().selection;
       sel.componentIds.forEach((id) => useSchematicStore.getState().rotateComponent(id));
     }
-  });
+  }, { preventDefault: true });
   useHotkeys('x', () => {
     if (activeTool === 'place_component') {
       setPlacementMirror((m) => !m);
@@ -492,7 +492,7 @@ export default function SchematicEditor() {
       const sel = useSchematicStore.getState().selection;
       sel.componentIds.forEach((id) => useSchematicStore.getState().mirrorComponent(id));
     }
-  });
+  }, { preventDefault: true });
   // Ctrl+R: rotate instead of browser refresh
   useHotkeys('ctrl+r', (e) => {
     e.preventDefault();
@@ -502,12 +502,6 @@ export default function SchematicEditor() {
       const sel = useSchematicStore.getState().selection;
       sel.componentIds.forEach((id) => useSchematicStore.getState().rotateComponent(id));
     }
-  }, { preventDefault: true, enableOnFormTags: true });
-  // Ctrl+A: select all components on the current sheet
-  useHotkeys('ctrl+a', (e) => {
-    e.preventDefault();
-    const ids = sheetComponents.map((c) => c.id);
-    useSchematicStore.getState().select({ componentIds: ids });
   }, { preventDefault: true, enableOnFormTags: true });
 
   // --- Commit label placement or edit ---
