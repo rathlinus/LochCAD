@@ -110,8 +110,8 @@ export const useCheckStore = create<CheckState>((set) => ({
   },
 
   runDRCCheck: () => {
-    const perfboard = useProjectStore.getState().project.perfboard;
-    const result = runDRC(perfboard);
+    const project = useProjectStore.getState().project;
+    const result = runDRC(project.perfboard, project.schematic);
     set({
       drcResult: result,
       activeCheck: 'drc',

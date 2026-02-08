@@ -68,7 +68,7 @@ export const COLORS = {
   boardPerf: '#8B7355',
   boardHole: '#1b1f2b',
   solderBridge: '#c0c0c0',
-  wireBridge: '#4fc3f7',
+  wireBridge: '#c0c0c0',
   trackCut: '#ff5252',
   ratsnest: '#ff5252',
   errorMarker: '#ff5252',

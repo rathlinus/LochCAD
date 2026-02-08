@@ -80,6 +80,68 @@ export function getConnectionOccupiedHoles(
   return occupied;
 }
 
+/**
+ * Get all through-holes occupied by wire_bridge connections.
+ * Wire bridges behave like 0-ohm resistors — every point along their path
+ * is a physical through-hole that blocks routing on ALL sides.
+ */
+export function getWireBridgeOccupiedHoles(
+  connections: PerfboardConnection[],
+  excludeEndpoints?: Set<string>,
+): Set<string> {
+  const occupied = new Set<string>();
+  for (const conn of connections) {
+    if (conn.type !== 'wire_bridge') continue;
+    const fullPath: GridPosition[] = [conn.from, ...(conn.waypoints ?? []), conn.to];
+    for (let i = 0; i < fullPath.length - 1; i++) {
+      for (const key of segmentHoles(fullPath[i], fullPath[i + 1])) {
+        occupied.add(key);
+      }
+    }
+  }
+  if (excludeEndpoints) {
+    for (const key of excludeEndpoints) occupied.delete(key);
+  }
+  return occupied;
+}
+
+/**
+ * Check if a straight-line bridge route is possible (same row or same column).
+ * Bridges can ONLY go in a straight line — no bends or turns.
+ * Returns the route (array of grid positions) if clear, or null if blocked.
+ * The occupied set should contain ALL holes that block the bridge (components + all-side connections).
+ */
+export function findStraightBridgeRoute(
+  from: GridPosition,
+  to: GridPosition,
+  occupied: Set<string>,
+): GridPosition[] | null {
+  // Must be on same row or same column
+  if (from.col !== to.col && from.row !== to.row) return null;
+  // Must not be the same point
+  if (from.col === to.col && from.row === to.row) return null;
+
+  // Walk every hole along the straight line and check for obstructions
+  const route: GridPosition[] = [];
+  const dc = Math.sign(to.col - from.col);
+  const dr = Math.sign(to.row - from.row);
+  let c = from.col, r = from.row;
+  while (c !== to.col || r !== to.row) {
+    route.push({ col: c, row: r });
+    c += dc;
+    r += dr;
+  }
+  route.push({ col: to.col, row: to.row });
+
+  // Check intermediate holes (skip endpoints — those are the pins)
+  for (let i = 1; i < route.length - 1; i++) {
+    const key = gridKey(route[i].col, route[i].row);
+    if (occupied.has(key)) return null; // blocked
+  }
+
+  return route;
+}
+
 /** Check if a solder-bridge (adjacent 1-hole segment) would cross an existing connection on the same side */
 export function solderBridgeCrossesExisting(
   from: GridPosition,
@@ -254,6 +316,58 @@ const TURN_PENALTY = 20;
 // Direction encoding for A*: 0=right, 1=left, 2=down, 3=up, 4=start
 type DirIdx = 0 | 1 | 2 | 3 | 4;
 
+// ---- Binary Min-Heap for A* priority queue ----
+
+interface HeapNode {
+  key: string;
+  f: number;
+}
+
+class MinHeap {
+  private data: HeapNode[] = [];
+
+  get size(): number { return this.data.length; }
+
+  push(node: HeapNode): void {
+    this.data.push(node);
+    this._bubbleUp(this.data.length - 1);
+  }
+
+  pop(): HeapNode | undefined {
+    const top = this.data[0];
+    const last = this.data.pop();
+    if (this.data.length > 0 && last) {
+      this.data[0] = last;
+      this._sinkDown(0);
+    }
+    return top;
+  }
+
+  private _bubbleUp(i: number): void {
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (this.data[i].f < this.data[parent].f) {
+        [this.data[i], this.data[parent]] = [this.data[parent], this.data[i]];
+        i = parent;
+      } else break;
+    }
+  }
+
+  private _sinkDown(i: number): void {
+    const n = this.data.length;
+    while (true) {
+      let smallest = i;
+      const l = 2 * i + 1, r = 2 * i + 2;
+      if (l < n && this.data[l].f < this.data[smallest].f) smallest = l;
+      if (r < n && this.data[r].f < this.data[smallest].f) smallest = r;
+      if (smallest !== i) {
+        [this.data[i], this.data[smallest]] = [this.data[smallest], this.data[i]];
+        i = smallest;
+      } else break;
+    }
+  }
+}
+
 /**
  * Check if two grid positions are directly adjacent (distance == 1, no diagonal).
  * Used to auto-detect solder-bridge candidates.
@@ -262,14 +376,27 @@ export function isAdjacent(a: GridPosition, b: GridPosition): boolean {
   return (Math.abs(a.col - b.col) + Math.abs(a.row - b.row)) === 1;
 }
 
+export interface ExtendedRouteOptions extends RouteOptions {
+  /** Turn penalty override (default: 20). Lower = more turns allowed. */
+  turnPenalty?: number;
+  /** Additional penalty for cells near obstacles (congestion avoidance) */
+  congestionMap?: Map<string, number>;
+  /** Maximum number of A* iterations before giving up */
+  maxIterations?: number;
+}
+
 /**
  * A* Manhattan router optimised for simple, straight routing:
  * - Huge turn penalty → produces paths with as few corners as possible
+ * - Binary heap priority queue for O(n log n) performance
  * - Returns simplified corner-only waypoints (collinear points removed)
  * - Returns null only when no path exists at all
  */
-export function findManhattanRoute(opts: RouteOptions): GridPosition[] | null {
+export function findManhattanRoute(opts: RouteOptions | ExtendedRouteOptions): GridPosition[] | null {
   const { from, to, boardWidth, boardHeight, occupied } = opts;
+  const turnPen = ('turnPenalty' in opts && opts.turnPenalty !== undefined) ? opts.turnPenalty : TURN_PENALTY;
+  const congestion = ('congestionMap' in opts) ? (opts as ExtendedRouteOptions).congestionMap : undefined;
+  const maxIter = ('maxIterations' in opts && opts.maxIterations !== undefined) ? opts.maxIterations : 50000;
 
   const startKey = gridKey(from.col, from.row);
   const endKey = gridKey(to.col, to.row);
@@ -284,22 +411,23 @@ export function findManhattanRoute(opts: RouteOptions): GridPosition[] | null {
   const lPath = tryLRoute(from, to, boardWidth, boardHeight, occupied, startKey, endKey);
   if (lPath) return lPath;
 
-  // Full A* with direction-aware state to penalise turns heavily
-  // State key: "col,row,dir"
+  // Try Z-routes (2 corners) before full A* — faster than full search
+  const zPath = tryZRoute(from, to, boardWidth, boardHeight, occupied, startKey, endKey);
+  if (zPath) return zPath;
+
+  // Full A* with direction-aware state using binary heap
   const gScore = new Map<string, number>();
-  const fScore = new Map<string, number>();
   const cameFrom = new Map<string, string>();
 
   const h = (col: number, row: number) =>
     Math.abs(col - to.col) + Math.abs(row - to.row);
 
-  // Seed with all 4 initial directions (treat start as directionless)
   const startDir: DirIdx = 4; // special "no direction yet"
   const sk = `${startKey},${startDir}`;
   gScore.set(sk, 0);
-  fScore.set(sk, h(from.col, from.row));
 
-  const openSet: string[] = [sk];
+  const heap = new MinHeap();
+  heap.push({ key: sk, f: h(from.col, from.row) });
   const inOpen = new Set<string>([sk]);
   const closed = new Set<string>();
 
@@ -309,15 +437,13 @@ export function findManhattanRoute(opts: RouteOptions): GridPosition[] | null {
     return occupied.has(key);
   };
 
-  while (openSet.length > 0) {
-    // Pick lowest fScore
-    let bestIdx = 0;
-    let bestF = fScore.get(openSet[0]) ?? Infinity;
-    for (let i = 1; i < openSet.length; i++) {
-      const f = fScore.get(openSet[i]) ?? Infinity;
-      if (f < bestF) { bestF = f; bestIdx = i; }
-    }
-    const current = openSet.splice(bestIdx, 1)[0];
+  let iterations = 0;
+
+  while (heap.size > 0) {
+    if (++iterations > maxIter) return null; // Prevent runaway
+
+    const node = heap.pop()!;
+    const current = node.key;
     inOpen.delete(current);
 
     const parts = current.split(',');
@@ -351,16 +477,18 @@ export function findManhattanRoute(opts: RouteOptions): GridPosition[] | null {
 
       // Cost: 1 per step + turn penalty when direction changes
       const isTurn = cdir !== 4 && d !== cdir;
-      const stepCost = 1 + (isTurn ? TURN_PENALTY : 0);
-      const tentativeG = currentG + stepCost;
+      const stepCost = 1 + (isTurn ? turnPen : 0);
+      // Add congestion cost if provided
+      const congCost = congestion ? (congestion.get(gridKey(nc, nr)) ?? 0) : 0;
+      const tentativeG = currentG + stepCost + congCost;
       const prevG = gScore.get(nk) ?? Infinity;
 
       if (tentativeG < prevG) {
         cameFrom.set(nk, current);
         gScore.set(nk, tentativeG);
-        fScore.set(nk, tentativeG + h(nc, nr));
+        const f = tentativeG + h(nc, nr);
         if (!inOpen.has(nk)) {
-          openSet.push(nk);
+          heap.push({ key: nk, f });
           inOpen.add(nk);
         }
       }
@@ -368,6 +496,45 @@ export function findManhattanRoute(opts: RouteOptions): GridPosition[] | null {
   }
 
   // A* exhausted — no valid route found
+  return null;
+}
+
+/**
+ * Try Z-route: 2 corners (3 segments). Tries horizontal-vertical-horizontal
+ * and vertical-horizontal-vertical via nearby intermediate rows/columns.
+ */
+function tryZRoute(
+  from: GridPosition, to: GridPosition,
+  bw: number, bh: number,
+  occupied: Set<string>,
+  startKey: string, endKey: string,
+): GridPosition[] | null {
+  if (from.col === to.col || from.row === to.row) return null;
+
+  // H-V-H: horizontal from 'from', vertical in middle, horizontal to 'to'
+  const midCol = Math.round((from.col + to.col) / 2);
+  for (let offset = 0; offset <= Math.max(bw, bh); offset++) {
+    for (const mc of offset === 0 ? [midCol] : [midCol - offset, midCol + offset]) {
+      if (mc < 0 || mc >= bw) continue;
+      const m1: GridPosition = { col: mc, row: from.row };
+      const m2: GridPosition = { col: mc, row: to.row };
+      const path = [from, m1, m2, to];
+      if (pathClear(path, bw, bh, occupied, startKey, endKey)) return simplifyPath([from, m1, m2, to]);
+    }
+  }
+
+  // V-H-V: vertical from 'from', horizontal in middle, vertical to 'to'
+  const midRow = Math.round((from.row + to.row) / 2);
+  for (let offset = 0; offset <= Math.max(bw, bh); offset++) {
+    for (const mr of offset === 0 ? [midRow] : [midRow - offset, midRow + offset]) {
+      if (mr < 0 || mr >= bh) continue;
+      const m1: GridPosition = { col: from.col, row: mr };
+      const m2: GridPosition = { col: to.col, row: mr };
+      const path = [from, m1, m2, to];
+      if (pathClear(path, bw, bh, occupied, startKey, endKey)) return simplifyPath([from, m1, m2, to]);
+    }
+  }
+
   return null;
 }
 

@@ -8,10 +8,13 @@ import type {
   PerfboardConnection,
   DRCViolation,
   GridPosition,
+  SchematicDocument,
+  Net,
 } from '@/types';
 import { v4 as uuid } from 'uuid';
 import { getComponentById, getAdjustedFootprint } from '@/lib/component-library';
 import { getFootprintBBox, gridBBoxOverlap, rotatePad as routerRotatePad } from '@/lib/engine/router';
+import { buildNetlist } from './netlist';
 
 export interface DRCResult {
   violations: DRCViolation[];
@@ -24,8 +27,11 @@ export interface DRCResult {
   timestamp: number;
 }
 
-export function runDRC(perfboard: PerfboardDocument): DRCResult {
+export function runDRC(perfboard: PerfboardDocument, schematic?: SchematicDocument): DRCResult {
   const violations: DRCViolation[] = [];
+
+  // Build hole→net mapping from schematic for net-aware checks
+  const holeNetMap = schematic ? buildHoleNetMap(perfboard, schematic) : null;
 
   // 1. Overlapping components (pin holes)
   checkOverlappingComponents(perfboard, violations);
@@ -53,8 +59,8 @@ export function runDRC(perfboard: PerfboardDocument): DRCResult {
   // 7. Unconnected component pins (isolated pins with no wire)
   checkUnconnectedPins(perfboard, violations);
 
-  // 8. Wire crosses another wire on the same side without junction
-  checkWireCrossings(perfboard, violations);
+  // 8. Wire crosses another wire on the same side — check against schematic nets
+  checkWireCrossings(perfboard, violations, holeNetMap);
 
   // 9. Components with no connections at all
   checkIsolatedComponents(perfboard, violations);
@@ -351,16 +357,103 @@ function checkUnconnectedPins(perfboard: PerfboardDocument, violations: DRCViola
   }
 }
 
-function checkWireCrossings(perfboard: PerfboardDocument, violations: DRCViolation[]) {
+/**
+ * Build a mapping from hole position key ("col,row") to the schematic net name.
+ * Uses the netlist from the schematic + perfboard component placements to
+ * determine which net each component pin hole belongs to.
+ */
+function buildHoleNetMap(
+  perfboard: PerfboardDocument,
+  schematic: SchematicDocument,
+): Map<string, string> {
+  const netlist = buildNetlist(schematic);
+  const holeToNet = new Map<string, string>();
+
+  // For each perfboard component, find its schematic component,
+  // then map each footprint pad hole to the net that pin belongs to.
+  for (const pbComp of perfboard.components) {
+    // Find schematic component by ID
+    const sComp = schematic.components.find(c => c.id === pbComp.schematicComponentId);
+    if (!sComp) continue;
+
+    const def = getComponentById(pbComp.libraryId);
+    if (!def?.footprint) continue;
+
+    const { pads } = getAdjustedFootprint(def, pbComp.properties?.holeSpan);
+
+    for (const pad of pads) {
+      // Get the absolute hole position on the board
+      const rotated = rotatePad(pad.gridPosition, pbComp.rotation);
+      const absCol = pbComp.gridPosition.col + rotated.col;
+      const absRow = pbComp.gridPosition.row + rotated.row;
+      const holeKey = `${absCol},${absRow}`;
+
+      // Find which net this pin belongs to by matching
+      // componentRef + pinNumber in the netlist
+      const pinNumber = pad.label || String(pads.indexOf(pad) + 1);
+      for (const net of netlist.nets) {
+        const match = net.connections.find(
+          nc => nc.componentRef === sComp.reference && nc.pinNumber === pinNumber
+        );
+        if (match) {
+          holeToNet.set(holeKey, net.name);
+          break;
+        }
+      }
+    }
+  }
+
+  return holeToNet;
+}
+
+/**
+ * Resolve the net of a connection by looking at its endpoint holes.
+ * If a connection has a netId set (from autorouter), use that.
+ * Otherwise, check if the from/to holes sit on a known net from the schematic.
+ */
+function resolveConnectionNet(
+  conn: PerfboardConnection,
+  holeNetMap: Map<string, string> | null,
+): string | null {
+  // Explicit netId (set by autorouter)
+  if (conn.netId) return conn.netId;
+  if (!holeNetMap) return null;
+
+  // Check endpoints — if either sits on a component pin, use that net
+  const fromKey = `${conn.from.col},${conn.from.row}`;
+  const toKey = `${conn.to.col},${conn.to.row}`;
+  const fromNet = holeNetMap.get(fromKey);
+  const toNet = holeNetMap.get(toKey);
+
+  // If both endpoints have nets, they should match; return whichever is available
+  return fromNet || toNet || null;
+}
+
+function checkWireCrossings(
+  perfboard: PerfboardDocument,
+  violations: DRCViolation[],
+  holeNetMap: Map<string, string> | null,
+) {
+  // Map: "col,row-side" → list of connection IDs sharing that hole
   const holeUsage = new Map<string, string[]>();
 
   for (const conn of perfboard.connections) {
     const allPoints = [conn.from, ...(conn.waypoints || []), conn.to];
+    // Wire bridges occupy through-holes — register on BOTH sides
+    const sides = conn.type === 'wire_bridge' ? ['top', 'bottom'] : [conn.side];
     for (const pt of allPoints) {
-      const key = `${pt.col},${pt.row}-${conn.side}`;
-      if (!holeUsage.has(key)) holeUsage.set(key, []);
-      holeUsage.get(key)!.push(conn.id);
+      for (const side of sides) {
+        const key = `${pt.col},${pt.row}-${side}`;
+        if (!holeUsage.has(key)) holeUsage.set(key, []);
+        holeUsage.get(key)!.push(conn.id);
+      }
     }
+  }
+
+  // Build connId → resolved net lookup
+  const connNetMap = new Map<string, string | null>();
+  for (const conn of perfboard.connections) {
+    connNetMap.set(conn.id, resolveConnectionNet(conn, holeNetMap));
   }
 
   const reported = new Set<string>();
@@ -372,14 +465,57 @@ function checkWireCrossings(perfboard: PerfboardDocument, violations: DRCViolati
 
     const [coords] = key.split('-');
     const [col, row] = coords.split(',').map(Number);
-    violations.push({
-      id: uuid(),
-      type: 'short_circuit',
-      severity: 'warning',
-      message: `${connIds.length} wires share hole (${col},${row}) — verify this is an intentional junction`,
-      componentIds: [],
-      position: { col, row },
-    });
+
+    // Resolve nets for all connections sharing this hole
+    const nets = new Set<string>();
+    let hasUnknown = false;
+    for (const cid of connIds) {
+      const net = connNetMap.get(cid);
+      if (net) {
+        nets.add(net);
+      } else {
+        hasUnknown = true;
+      }
+    }
+
+    if (nets.size <= 1 && !hasUnknown) {
+      // All connections on the same net — this is an intentional junction, OK
+      // No violation needed
+      continue;
+    }
+
+    if (nets.size > 1) {
+      // Different nets sharing a hole — this is a SHORT CIRCUIT
+      const netNames = [...nets].join(', ');
+      violations.push({
+        id: uuid(),
+        type: 'short_circuit',
+        severity: 'error',
+        message: `Kurzschluss bei (${col},${row}) — ${connIds.length} Leitungen verbinden verschiedene Netze: ${netNames}`,
+        componentIds: [],
+        position: { col, row },
+      });
+    } else if (hasUnknown && nets.size === 1) {
+      // Some connections have a known net, others don't — warn
+      violations.push({
+        id: uuid(),
+        type: 'short_circuit',
+        severity: 'warning',
+        message: `${connIds.length} Leitungen teilen Loch (${col},${row}) — Netz ${[...nets][0]}, einige Verbindungen ohne Netzzuordnung`,
+        componentIds: [],
+        position: { col, row },
+      });
+    } else {
+      // No net info at all — can't verify, just warn
+      violations.push({
+        id: uuid(),
+        type: 'short_circuit',
+        severity: 'warning',
+        message: `${connIds.length} Leitungen teilen Loch (${col},${row}) — kein Schaltplan zur Überprüfung`,
+        componentIds: [],
+        position: { col, row },
+      });
+    }
   }
 }
 

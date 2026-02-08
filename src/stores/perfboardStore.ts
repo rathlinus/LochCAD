@@ -18,7 +18,7 @@ import type {
 import { useProjectStore } from './projectStore';
 import { PERFBOARD_GRID } from '@/constants';
 import { getBuiltInComponents, getAdjustedFootprint } from '@/lib/component-library';
-import { findManhattanRoute, getOccupiedHoles, getConnectionOccupiedHoles, solderBridgeCrossesExisting, gridKey, hasCollision, hasFootprintCollision, isAdjacent, insertSupportPoints } from '@/lib/engine/router';
+import { findManhattanRoute, findStraightBridgeRoute, getOccupiedHoles, getConnectionOccupiedHoles, getWireBridgeOccupiedHoles, solderBridgeCrossesExisting, gridKey, hasCollision, hasFootprintCollision, isAdjacent, insertSupportPoints } from '@/lib/engine/router';
 import { autoLayout } from '@/lib/engine/auto-layout';
 import type { AutoLayoutMode } from '@/lib/engine/auto-layout';
 import { autoRoute } from '@/lib/engine/autorouter';
@@ -335,6 +335,10 @@ export const usePerfboardStore = create<PerfboardState>()(
           );
           for (const key of connOccupied) occupied.add(key);
 
+          // Wire bridges occupy through-holes — block for ALL sides
+          const bridgeOcc = getWireBridgeOccupiedHoles(perfboard.connections, endpointKeys);
+          for (const key of bridgeOcc) occupied.add(key);
+
           // Allow routing to start/end on component pins
           occupied.delete(fromKey);
           occupied.delete(toKey);
@@ -354,6 +358,27 @@ export const usePerfboardStore = create<PerfboardState>()(
                   side: 'bottom',
                 });
               });
+            }
+          } else if (drawingType === 'wire_bridge') {
+            // Wire bridge: straight line only (same row or column), no bends
+            if (drawingFrom.col !== drawingTo.col && drawingFrom.row !== drawingTo.row) {
+              useToastStore.getState().showToast('Drahtbrücke nur gerade möglich (gleiche Zeile oder Spalte)', 'warning');
+            } else {
+              const bridgeRoute = findStraightBridgeRoute(drawingFrom, drawingTo, occupied);
+              if (bridgeRoute && bridgeRoute.length >= 2) {
+                mutatePerfboard((p) => {
+                  p.connections.push({
+                    id: uuid(),
+                    type: 'wire_bridge',
+                    from: { ...drawingFrom },
+                    to: { ...drawingTo },
+                    waypoints: undefined, // straight line — no waypoints
+                    side: 'top',
+                  });
+                });
+              } else {
+                useToastStore.getState().showToast('Drahtbrücke blockiert — Weg nicht frei', 'warning');
+              }
             }
           } else {
             // A* Manhattan route (turn-minimised)

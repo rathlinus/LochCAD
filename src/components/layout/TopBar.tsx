@@ -322,8 +322,8 @@ export function TopBar() {
   }, []);
 
   const handleRunDRC = useCallback(() => {
-    const pb = useProjectStore.getState().project.perfboard;
-    const result = runDRC(pb);
+    const project = useProjectStore.getState().project;
+    const result = runDRC(project.perfboard, project.schematic);
     if (result.passed) {
       useToastStore.getState().showToast(`DRC bestanden – keine Fehler`, 'success');
     } else {

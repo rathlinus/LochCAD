@@ -10,7 +10,7 @@ import { getBuiltInComponents, getAdjustedFootprint } from '@/lib/component-libr
 import { COLORS, PERFBOARD_GRID, CATEGORY_PREFIX, nextUniqueReference } from '@/constants';
 import type { GridPosition, PerfboardComponent, PerfboardConnection, ComponentDefinition, FootprintPad } from '@/types';
 import { useHotkeys } from 'react-hotkeys-hook';
-import { findManhattanRoute, getOccupiedHoles, getConnectionOccupiedHoles, solderBridgeCrossesExisting, hasCollision, gridKey, hasFootprintCollision, isAdjacent, insertSupportPoints } from '@/lib/engine/router';
+import { findManhattanRoute, findStraightBridgeRoute, getOccupiedHoles, getConnectionOccupiedHoles, getWireBridgeOccupiedHoles, solderBridgeCrossesExisting, hasCollision, gridKey, hasFootprintCollision, isAdjacent, insertSupportPoints } from '@/lib/engine/router';
 import { buildNetlist } from '@/lib/engine/netlist';
 
 export default function PerfboardEditor() {
@@ -75,6 +75,9 @@ export default function PerfboardEditor() {
     const endpointKeys = new Set([fromKey, toKey]);
     const connOcc = getConnectionOccupiedHoles(perfboard.connections, drawingSide, endpointKeys);
     for (const k of connOcc) base.add(k);
+    // Wire bridges occupy through-holes — block for ALL sides
+    const bridgeOcc = getWireBridgeOccupiedHoles(perfboard.connections, endpointKeys);
+    for (const k of bridgeOcc) base.add(k);
     base.delete(fromKey);
     base.delete(toKey);
     return base;
@@ -94,6 +97,12 @@ export default function PerfboardEditor() {
     if (isAdjacent(drawingFrom, drawingTo)) {
       return solderBridgeCrossesExisting(drawingFrom, drawingTo, perfboard.connections, 'bottom');
     }
+    // Wire bridge: must be straight line (same row or column)
+    if (drawingType === 'wire_bridge') {
+      if (drawingFrom.col !== drawingTo.col && drawingFrom.row !== drawingTo.row) return true;
+      const route = findStraightBridgeRoute(drawingFrom, drawingTo, previewOccupied);
+      return !route;
+    }
     const route = findManhattanRoute({
       from: drawingFrom,
       to: drawingTo,
@@ -102,13 +111,22 @@ export default function PerfboardEditor() {
       occupied: previewOccupied,
     });
     return !route;
-  }, [isDrawing, drawingFrom, drawingTo, perfboard.width, perfboard.height, previewOccupied, perfboard.connections]);
+  }, [isDrawing, drawingFrom, drawingTo, drawingType, perfboard.width, perfboard.height, previewOccupied, perfboard.connections]);
 
   const drawingPreviewPath = useMemo(() => {
     if (!isDrawing || !drawingFrom || !drawingTo) return null;
     if (drawingFrom.col === drawingTo.col && drawingFrom.row === drawingTo.row) return null;
     // Adjacent → just a direct segment (will become solder bridge)
     if (isAdjacent(drawingFrom, drawingTo)) return [drawingFrom, drawingTo];
+    // Wire bridge: straight line only
+    if (drawingType === 'wire_bridge') {
+      if (drawingFrom.col !== drawingTo.col && drawingFrom.row !== drawingTo.row) {
+        return [drawingFrom, drawingTo]; // fallback for blocked preview
+      }
+      const route = findStraightBridgeRoute(drawingFrom, drawingTo, previewOccupied);
+      if (!route) return [drawingFrom, drawingTo];
+      return route;
+    }
     const route = findManhattanRoute({
       from: drawingFrom,
       to: drawingTo,
@@ -119,7 +137,7 @@ export default function PerfboardEditor() {
     if (!route) return [drawingFrom, drawingTo]; // fallback direct line for blocked preview
     // Add support points for preview
     return insertSupportPoints(route);
-  }, [isDrawing, drawingFrom, drawingTo, perfboard.width, perfboard.height, previewOccupied]);
+  }, [isDrawing, drawingFrom, drawingTo, drawingType, perfboard.width, perfboard.height, previewOccupied]);
 
   // Check collision for placement preview — full footprint bbox overlap (no overlap allowed on Lochraster)
   const placementCollision = useMemo(() => {
@@ -1055,7 +1073,7 @@ const ConnectionRenderer: React.FC<{
 
   const strokeWidth = isSolderBridge ? 4
     : connection.type === 'wire_bridge' ? 3 : 2;
-  const dash = connection.type === 'wire_bridge' ? [6, 3] : undefined;
+  const dash = undefined; // All connection types render as solid lines
 
   // Build points array including waypoints
   const allPoints: GridPosition[] = [connection.from];

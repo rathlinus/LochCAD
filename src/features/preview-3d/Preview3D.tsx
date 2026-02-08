@@ -195,7 +195,7 @@ interface Connection3DProps {
 // Shared materials for connections
 const wireMaterials = {
   wire:         new THREE.MeshStandardMaterial({ color: '#e74c3c', roughness: 0.4, metalness: 0.6 }),
-  wireBridge:   new THREE.MeshStandardMaterial({ color: '#3498db', roughness: 0.5, metalness: 0.2 }),
+  bareWire:     new THREE.MeshStandardMaterial({ color: '#c0c0c0', roughness: 0.25, metalness: 0.85 }), // bare metal jumper wire
   solderBridge: new THREE.MeshStandardMaterial({ color: '#b87333', roughness: 0.35, metalness: 0.7 }),
   solder:       new THREE.MeshStandardMaterial({ color: '#c8c8c8', roughness: 0.4, metalness: 0.6 }),
   insulation:   new THREE.MeshStandardMaterial({ color: '#2980b9', roughness: 0.6, metalness: 0.05 }),
@@ -261,41 +261,80 @@ function Connection3DView({ connection, boardCols, boardRows }: Connection3DProp
     }
 
     if (isWireBridge) {
-      // ---- Wire bridge: insulated wire arching over the board ----
-      const pts3d: THREE.Vector3[] = [];
-      for (let i = 0; i < allPos.length; i++) {
-        const w = g2w(allPos[i]);
-        const isEndpoint = i === 0 || i === allPos.length - 1;
-        // Endpoints go through the board; midpoints arch above
-        if (isEndpoint) {
-          pts3d.push(new THREE.Vector3(w.x, BOARD_THICK + 0.5, w.z));
-        } else {
-          pts3d.push(new THREE.Vector3(w.x, BOARD_THICK + 4, w.z));
-        }
-      }
+      // ---- Wire bridge: bare wire jumper (like 0-ohm resistor) ----
+      // Straight line only: leads bend down into holes at start/end,
+      // the middle wire body floats above the board surface.
+      const wireRadius = 0.22;
+      const floatHeight = BOARD_THICK + 3.0; // wire body height above board
+      const leadBendR = 0.8; // bend radius at the lead-to-body transition
 
-      // If only 2 points, add a mid-point for a nice arch
-      if (pts3d.length === 2) {
-        const mid = new THREE.Vector3().lerpVectors(pts3d[0], pts3d[1], 0.5);
-        mid.y = BOARD_THICK + 5;
-        const curve = new THREE.QuadraticBezierCurve3(pts3d[0], mid, pts3d[1]);
-        const tubeGeom = new THREE.TubeGeometry(curve, 24, 0.35, 8, false);
-        g.add(new THREE.Mesh(tubeGeom, wireMaterials.insulation));
-      } else {
-        const curve = new THREE.CatmullRomCurve3(pts3d, false, 'catmullrom', 0.3);
-        const tubeGeom = new THREE.TubeGeometry(curve, pts3d.length * 10, 0.35, 8, false);
-        g.add(new THREE.Mesh(tubeGeom, wireMaterials.insulation));
-      }
+      const fromW = g2w(connection.from);
+      const toW = g2w(connection.to);
 
-      // Solder blobs at endpoints
-      for (const endPos of [connection.from, connection.to]) {
-        const w = g2w(endPos);
-        const blobGeom = new THREE.SphereGeometry(0.55, 8, 6);
+      // Solder blobs at endpoints on the bottom
+      for (const w of [fromW, toW]) {
+        const blobGeom = new THREE.SphereGeometry(0.5, 8, 6);
         const blob = new THREE.Mesh(blobGeom, wireMaterials.solder);
         blob.position.set(w.x, -0.05, w.z);
-        blob.scale.set(1, 0.4, 1);
+        blob.scale.set(1, 0.35, 1);
         g.add(blob);
       }
+
+      // Vertical leads through board holes (from bottom through board to top surface)
+      const leadBottomY = -0.3;
+      const leadTopY = BOARD_THICK + 0.1;
+      for (const w of [fromW, toW]) {
+        const leadLen = leadTopY - leadBottomY;
+        const leadGeom = new THREE.CylinderGeometry(wireRadius * 0.7, wireRadius * 0.7, leadLen, 6);
+        const lead = new THREE.Mesh(leadGeom, wireMaterials.bareWire);
+        lead.position.set(w.x, leadBottomY + leadLen / 2, w.z);
+        g.add(lead);
+      }
+
+      // Build a smooth curve: lead up from start → float across → lead down to end
+      // Using a CatmullRom or manual bezier path
+      const isHoriz = connection.from.row === connection.to.row;
+      const dist = Math.sqrt((toW.x - fromW.x) ** 2 + (toW.z - fromW.z) ** 2);
+
+      // Create points for the wire path (lead bends + floating body)
+      const pts: THREE.Vector3[] = [];
+
+      // Start: just above hole
+      pts.push(new THREE.Vector3(fromW.x, leadTopY, fromW.z));
+
+      // Start bend: transition up to floating height
+      // Small offset inward from the pin toward the other pin
+      const dx = toW.x - fromW.x;
+      const dz = toW.z - fromW.z;
+      const dirLen = Math.sqrt(dx * dx + dz * dz);
+      const ux = dirLen > 0 ? dx / dirLen : 0;
+      const uz = dirLen > 0 ? dz / dirLen : 0;
+      const bendOffset = Math.min(leadBendR, dist / 4);
+
+      pts.push(new THREE.Vector3(
+        fromW.x + ux * bendOffset,
+        floatHeight,
+        fromW.z + uz * bendOffset
+      ));
+
+      // End bend: transition down from floating height
+      pts.push(new THREE.Vector3(
+        toW.x - ux * bendOffset,
+        floatHeight,
+        toW.z - uz * bendOffset
+      ));
+
+      // End: just above hole
+      pts.push(new THREE.Vector3(toW.x, leadTopY, toW.z));
+
+      // Render as smooth tube
+      if (pts.length >= 2) {
+        const curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.3);
+        const segments = Math.max(24, Math.round(dist * 4));
+        const tubeGeom = new THREE.TubeGeometry(curve, segments, wireRadius, 8, false);
+        g.add(new THREE.Mesh(tubeGeom, wireMaterials.bareWire));
+      }
+
       return;
     }
 
