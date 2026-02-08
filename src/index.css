@@ -1,0 +1,178 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #1b1f2b;
+  color: #eaeaea;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+}
+
+#root {
+  height: 100vh;
+  width: 100vw;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #232838;
+}
+::-webkit-scrollbar-thumb {
+  background: #1a3a5c;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2176B7;
+}
+
+/* Konva container fix */
+.konvajs-content {
+  outline: none !important;
+}
+
+/* Panel styles */
+.panel {
+  @apply bg-lochcad-surface border border-lochcad-panel/30 rounded-lg;
+}
+
+.panel-header {
+  @apply px-3 py-2 border-b border-lochcad-panel/30 text-sm font-semibold text-lochcad-text flex items-center gap-2;
+}
+
+/* Button styles */
+.btn {
+  @apply px-3 py-1.5 rounded text-sm font-medium transition-colors duration-150 flex items-center gap-1.5;
+}
+
+.btn-primary {
+  @apply bg-lochcad-accent hover:bg-lochcad-accent-hover text-white;
+}
+
+.btn-secondary {
+  @apply bg-lochcad-panel/50 hover:bg-lochcad-panel text-lochcad-text;
+}
+
+.btn-ghost {
+  @apply bg-transparent hover:bg-lochcad-panel/30 text-lochcad-text-dim hover:text-lochcad-text;
+}
+
+.btn-icon {
+  @apply p-1.5 rounded hover:bg-lochcad-panel/40 text-lochcad-text-dim hover:text-lochcad-text transition-colors;
+}
+
+.btn-icon.active {
+  @apply bg-lochcad-accent/20 text-lochcad-accent;
+}
+
+/* Tool button */
+.tool-btn {
+  @apply flex flex-col items-center justify-center p-2 rounded-lg text-xs gap-1 
+    text-lochcad-text-dim hover:text-lochcad-text hover:bg-lochcad-panel/30 
+    transition-all duration-150 cursor-pointer select-none min-w-[48px];
+}
+
+.tool-btn.active {
+  @apply bg-lochcad-accent/20 text-lochcad-accent border border-lochcad-accent/30;
+}
+
+.tool-btn:active {
+  @apply scale-95;
+}
+
+/* Tab styles */
+.tab {
+  @apply px-4 py-2 text-sm cursor-pointer border-b-2 border-transparent 
+    text-lochcad-text-dim hover:text-lochcad-text transition-colors;
+}
+
+.tab.active {
+  @apply text-lochcad-accent border-lochcad-accent;
+}
+
+/* Input styles */
+.input {
+  @apply bg-lochcad-bg border border-lochcad-panel/50 rounded px-2 py-1 text-sm 
+    text-lochcad-text outline-none focus:border-lochcad-accent transition-colors;
+}
+
+.input-label {
+  @apply text-xs text-lochcad-text-dim mb-1;
+}
+
+/* Property row */
+.prop-row {
+  @apply flex items-center gap-2 py-1 px-2;
+}
+
+.prop-key {
+  @apply text-xs text-lochcad-text-dim w-24 shrink-0;
+}
+
+.prop-value {
+  @apply text-xs text-lochcad-text flex-1;
+}
+
+/* Tooltip */
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  background: #1a3a5c;
+  color: #eaeaea;
+  font-size: 11px;
+  border-radius: 4px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  z-index: 100;
+}
+
+[data-tooltip]:hover::after {
+  opacity: 1;
+}
+
+/* Animations */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.15s ease-out;
+}
+
+/* Context menu */
+.context-menu {
+  @apply absolute bg-lochcad-surface border border-lochcad-panel/50 rounded-lg shadow-xl py-1 z-50 min-w-[160px];
+}
+
+.context-menu-item {
+  @apply px-3 py-1.5 text-sm text-lochcad-text hover:bg-lochcad-panel/30 cursor-pointer flex items-center gap-2;
+}
+
+.context-menu-separator {
+  @apply border-t border-lochcad-panel/30 my-1;
+}
