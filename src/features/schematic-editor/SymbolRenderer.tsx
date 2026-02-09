@@ -52,7 +52,9 @@ function getSymbolBounds(symbol: ComponentSymbol): { x: number; y: number; width
   // Fallback if empty
   if (minX > maxX) { minX = -45; maxX = 45; minY = -45; maxY = 45; }
   const pad = 5;
-  return { x: minX - pad, y: minY - pad, width: maxX - minX + 2 * pad, height: maxY - minY + 2 * pad };
+  const w = maxX - minX + 2 * pad;
+  const h = maxY - minY + 2 * pad;
+  return { x: minX - pad, y: minY - pad, width: Math.max(w, 1), height: Math.max(h, 1) };
 }
 
 interface SymbolRendererProps {
@@ -232,19 +234,22 @@ const GraphicRenderer: React.FC<{ graphic: SymbolGraphic; highlight: string | nu
         />
       );
 
-    case 'rectangle':
+    case 'rectangle': {
+      const rw = graphic.end.x - graphic.start.x;
+      const rh = graphic.end.y - graphic.start.y;
       return (
         <Rect
-          x={graphic.start.x}
-          y={graphic.start.y}
-          width={graphic.end.x - graphic.start.x}
-          height={graphic.end.y - graphic.start.y}
+          x={rw < 0 ? graphic.end.x : graphic.start.x}
+          y={rh < 0 ? graphic.end.y : graphic.start.y}
+          width={Math.abs(rw) || 1}
+          height={Math.abs(rh) || 1}
           stroke={stroke}
           strokeWidth={strokeWidth}
           fill={fill === 'none' ? COLORS.componentBodyFill : fill}
           cornerRadius={1}
         />
       );
+    }
 
     case 'circle':
       return (
