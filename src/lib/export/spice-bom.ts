@@ -481,7 +481,6 @@ export function bomToHtml(bom: BOMEntry[], info?: BOMProjectInfo): string {
       <tr>
         <th>Dokumenttyp</th>
         <td class="tb-doctype" colspan="2">St\u00fcckliste (BOM)</td>
-        <td class="tb-norm">nach DIN EN 62027 / IEC 62027</td>
       </tr>
       <tr>
         <th>Beschreibung</th>
@@ -575,13 +574,6 @@ export function bomToHtml(bom: BOMEntry[], info?: BOMProjectInfo): string {
         <td class="sign-cell"></td>
       </tr>
     </table>
-
-    <!-- Norm reference -->
-    <div class="norm-footer">
-      <span>Erstellt gem\u00e4\u00df DIN EN 62027:2012 (IEC 62027:2011) \u2014 Listenerstellung</span>
-      <span>Schriftfeld nach DIN EN ISO 7200</span>
-      <span>${esc(docNumber)} Rev.\u00a0${esc(revision)}</span>
-    </div>
 
     <!-- Page Footer -->
     <div class="page-footer">

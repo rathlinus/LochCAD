@@ -33,12 +33,12 @@ export function AppLayout() {
         {/* Left Sidebar — Component library, sheets */}
         <Sidebar />
 
-        <div className="flex flex-col flex-1 overflow-hidden">
+        <div className="flex flex-col flex-1 overflow-hidden min-h-0">
           {/* Toolbar — Tools for current view */}
           <Toolbar />
 
           {/* Main Canvas */}
-          <div className="flex-1 relative overflow-hidden">
+          <div className="flex-1 flex flex-col relative overflow-hidden min-h-0">
             <Suspense fallback={<LoadingFallback />}>
               {currentView === 'schematic' && <SchematicEditor />}
               {currentView === 'perfboard' && <PerfboardEditor />}
