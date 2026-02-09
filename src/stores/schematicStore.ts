@@ -20,7 +20,7 @@ import type {
 import { useProjectStore } from './projectStore';
 import { SCHEMATIC_GRID } from '@/constants';
 import { getBuiltInComponents } from '@/lib/component-library';
-import { routeSchematicWire, getComponentBBox, getComponentPinSegments, getComponentPinTips, hasComponentCollision, buildOccupiedEdges, addWireEdges, wirePassesThroughBBox, findSameNetWireIds, buildRoutingContext, getWireEdgeSet, buildOtherNetPinCells } from '@/lib/engine/schematic-router';
+import { routeSchematicWire, getComponentBBox, getComponentPinSegments, hasComponentCollision, buildOccupiedEdges, addWireEdges, wirePassesThroughBBox, findSameNetWireIds, buildRoutingContext, getWireEdgeSet, buildOtherNetPinCells } from '@/lib/engine/schematic-router';
 import type { BBox } from '@/lib/engine/schematic-router';
 import { useToastStore } from './toastStore';
 import type { ComponentSymbol } from '@/types';
@@ -134,94 +134,6 @@ function restoreSchSnapshot(snap: SchSnapshot) {
     state.project.updatedAt = new Date().toISOString();
     state.isDirty = true;
   });
-}
-
-/**
- * Remove wires that have at least one endpoint connected to nothing (no
- * component pin, no other wire, no junction, no label) as well as
- * single-point / zero-length dot wires.
- *
- * Runs iteratively: removing a wire may leave another wire's endpoint
- * dangling.  Junctions and labels act as natural stop-points so only
- * truly orphaned stubs are cleaned up.
- */
-function removeDanglingWires(
-  s: ReturnType<typeof getSchematic>,
-  sheetId: string,
-  allLib: import('@/types').ComponentDefinition[],
-) {
-  const EPSILON = 1;
-  const ptEq = (a: Point, b: Point) =>
-    Math.abs(a.x - b.x) < EPSILON && Math.abs(a.y - b.y) < EPSILON;
-
-  let changed = true;
-  while (changed) {
-    changed = false;
-    const sheetComps = s.components.filter((c) => c.sheetId === sheetId);
-    const sheetJunctions = s.junctions.filter((j) => j.sheetId === sheetId);
-    const sheetLabels = s.labels.filter((l) => l.sheetId === sheetId);
-    const sheetWires = s.wires.filter((w) => w.sheetId === sheetId);
-
-    // Collect all component pin-tip positions on this sheet
-    const pinTips: Point[] = [];
-    for (const comp of sheetComps) {
-      const def = allLib.find((d) => d.id === comp.libraryId);
-      if (def) pinTips.push(...getComponentPinTips(comp, def.symbol));
-    }
-
-    const toRemove = new Set<string>();
-
-    for (const wire of sheetWires) {
-      // Single-point (dot) wire — always remove
-      if (wire.points.length < 2) {
-        toRemove.add(wire.id);
-        continue;
-      }
-
-      // Zero-length wire (all points identical)
-      const allSame = wire.points.every((p) => ptEq(p, wire.points[0]));
-      if (allSame) {
-        toRemove.add(wire.id);
-        continue;
-      }
-
-      // Check each endpoint of the wire
-      const endpoints = [wire.points[0], wire.points[wire.points.length - 1]];
-      const endpointConnected = endpoints.map((ep) => {
-        // Connected to a component pin?
-        if (pinTips.some((pt) => ptEq(pt, ep))) return true;
-        // Connected to a junction?
-        if (sheetJunctions.some((j) => ptEq(j.position, ep))) return true;
-        // Connected to a label?
-        if (sheetLabels.some((l) => ptEq(l.position, ep))) return true;
-        // Connected to another wire's point?
-        for (const other of sheetWires) {
-          if (other.id === wire.id) continue;
-          if (toRemove.has(other.id)) continue;
-          if (other.points.some((op) => ptEq(op, ep))) return true;
-        }
-        return false;
-      });
-
-      // Remove if ANY endpoint is floating (connected to nothing at all)
-      if (!endpointConnected[0] || !endpointConnected[1]) {
-        toRemove.add(wire.id);
-      }
-    }
-
-    if (toRemove.size > 0) {
-      s.wires = s.wires.filter((w) => !toRemove.has(w.id));
-      // Also clean up orphaned junctions that no longer touch any wire
-      const remainingSheetWires = s.wires.filter((w) => w.sheetId === sheetId);
-      s.junctions = s.junctions.filter((j) => {
-        if (j.sheetId !== sheetId) return true;
-        return remainingSheetWires.some((w) =>
-          w.points.some((p) => ptEq(p, j.position)),
-        );
-      });
-      changed = true;
-    }
-  }
 }
 
 /** Reset all editor state when switching projects. */
@@ -1126,11 +1038,7 @@ export const useSchematicStore = create<SchematicState>()(
     deleteComponent: (id) => {
       get().pushSnapshot();
       mutateSchematic((s) => {
-        const comp = s.components.find((c) => c.id === id);
-        const sheetId = comp?.sheetId ?? useProjectStore.getState().activeSheetId;
         s.components = s.components.filter((c) => c.id !== id);
-        const allLib = [...getBuiltInComponents(), ...useProjectStore.getState().project.componentLibrary];
-        removeDanglingWires(s, sheetId, allLib);
       });
     },
 
@@ -1343,17 +1251,11 @@ export const useSchematicStore = create<SchematicState>()(
     deleteSelected: () => {
       get().pushSnapshot();
       const sel = get().selection;
-      const sheetId = useProjectStore.getState().activeSheetId;
       mutateSchematic((s) => {
         s.components = s.components.filter((c) => !sel.componentIds.includes(c.id));
         s.wires = s.wires.filter((w) => !sel.wireIds.includes(w.id));
         s.labels = s.labels.filter((l) => !sel.labelIds.includes(l.id));
         s.junctions = s.junctions.filter((j) => !sel.junctionIds.includes(j.id));
-        // Clean up wires left connected to nothing after the deletion
-        if (sel.componentIds.length > 0) {
-          const allLib = [...getBuiltInComponents(), ...useProjectStore.getState().project.componentLibrary];
-          removeDanglingWires(s, sheetId, allLib);
-        }
       });
       set((state) => {
         state.selection = { componentIds: [], wireIds: [], labelIds: [], junctionIds: [] };
