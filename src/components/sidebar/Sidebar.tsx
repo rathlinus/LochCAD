@@ -11,6 +11,8 @@ import {
   Package,
   Layers,
   X,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 
 // Match helper: every search token must appear in at least one searchable field
@@ -51,7 +53,10 @@ function Highlight({ text, tokens }: { text: string; tokens: string[] }) {
 
 export function Sidebar() {
   const currentView = useProjectStore((s) => s.currentView);
-  const customComponents = useProjectStore((s) => s.project.componentLibrary);
+  const customComponents = useProjectStore((s) => s.project.componentLibrary ?? []);
+  const setCurrentView = useProjectStore((s) => s.setCurrentView);
+  const setEditingComponent = useProjectStore((s) => s.setEditingComponent);
+  const removeCustomComponent = useProjectStore((s) => s.removeCustomComponent);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['Resistors', 'Capacitors']));
   const [activeTab, setActiveTab] = useState<'library' | 'project'>('library');
@@ -125,6 +130,20 @@ export function Sidebar() {
       usePerfboardStore.getState().setActiveTool('place_component');
     }
   };
+
+  const handleEditComponent = (comp: ComponentDefinition) => {
+    setEditingComponent(comp.id);
+    setCurrentView('component-editor');
+  };
+
+  const handleDeleteComponent = (comp: ComponentDefinition, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm(`"${comp.name}" wirklich löschen?`)) {
+      removeCustomComponent(comp.id);
+    }
+  };
+
+  const isCustom = (comp: ComponentDefinition) => comp.id.startsWith('custom_');
 
   if (currentView === 'preview3d') {
     return (
@@ -239,14 +258,36 @@ export function Sidebar() {
                     {effectiveExpanded.has(category) && (
                       <div className="ml-2">
                         {components.map((comp) => (
-                          <button
+                          <div
                             key={comp.id}
-                            className="w-full text-left px-3 py-1 text-xs text-lochcad-text-dim hover:text-lochcad-text hover:bg-lochcad-accent/10 rounded-sm transition-colors cursor-grab active:cursor-grabbing"
-                            onClick={() => handlePlaceComponent(comp)}
-                            title={comp.description ?? comp.name}
+                            className="group/item flex items-center gap-0.5 hover:bg-lochcad-accent/10 rounded-sm transition-colors"
                           >
-                            {comp.name}
-                          </button>
+                            <button
+                              className="flex-1 text-left px-3 py-1 text-xs text-lochcad-text-dim hover:text-lochcad-text cursor-grab active:cursor-grabbing truncate"
+                              onClick={() => handlePlaceComponent(comp)}
+                              title={comp.description ?? comp.name}
+                            >
+                              {comp.name || comp.id || '(Unbenannt)'}
+                            </button>
+                            {isCustom(comp) && (
+                              <div className="hidden group-hover/item:flex items-center shrink-0 mr-1">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleEditComponent(comp); }}
+                                  className="p-0.5 rounded text-lochcad-text-dim/50 hover:text-lochcad-accent transition-colors"
+                                  title="Bearbeiten"
+                                >
+                                  <Pencil size={10} />
+                                </button>
+                                <button
+                                  onClick={(e) => handleDeleteComponent(comp, e)}
+                                  className="p-0.5 rounded text-lochcad-text-dim/50 hover:text-red-400 transition-colors"
+                                  title="Löschen"
+                                >
+                                  <Trash2 size={10} />
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         ))}
                       </div>
                     )}

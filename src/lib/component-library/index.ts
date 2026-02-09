@@ -26,8 +26,13 @@ export function getBuiltInComponents(): ComponentDefinition[] {
   return _cache;
 }
 
-export function getComponentById(id: string): ComponentDefinition | undefined {
-  return getBuiltInComponents().find((c) => c.id === id);
+/**
+ * Look up a component by its library ID.
+ * Pass the project's custom component list as second arg so custom parts are found too.
+ */
+export function getComponentById(id: string, customComponents?: ComponentDefinition[]): ComponentDefinition | undefined {
+  return getBuiltInComponents().find((c) => c.id === id)
+    ?? (customComponents ? customComponents.find((c) => c.id === id) : undefined);
 }
 
 /**

@@ -82,6 +82,7 @@ function loadFromLocalStorage(): Project | null {
       if (!parsed.author) parsed.author = '';
       if (!parsed.tags) parsed.tags = [];
       if (!parsed.notes) parsed.notes = [];
+      if (!parsed.componentLibrary) parsed.componentLibrary = [];
       return parsed as Project;
     }
   } catch { /* ignore corrupt data */ }
@@ -93,6 +94,7 @@ interface ProjectState {
   currentView: EditorView;
   activeSheetId: string;
   isDirty: boolean;
+  editingComponentId: string | null;
 
   // Actions
   setProject: (project: Project) => void;
@@ -111,6 +113,7 @@ interface ProjectState {
   addCustomComponent: (comp: ComponentDefinition) => void;
   removeCustomComponent: (id: string) => void;
   updateCustomComponent: (comp: ComponentDefinition) => void;
+  setEditingComponent: (id: string | null) => void;
   markDirty: () => void;
   markClean: () => void;
 
@@ -137,8 +140,7 @@ export const useProjectStore = create<ProjectState>()(
     project: _restored ?? createEmptyProject(),
     currentView: 'schematic',
     activeSheetId: _restored?.schematic?.sheets?.[0]?.id ?? 'main-sheet',
-    isDirty: false,
-
+    isDirty: false,    editingComponentId: null,
     setProject: (project) =>
       set((state) => {
         // Ensure new fields exist
@@ -261,7 +263,9 @@ export const useProjectStore = create<ProjectState>()(
 
     addCustomComponent: (comp) =>
       set((state) => {
-        state.project.componentLibrary.push(comp);
+        // Deep-clone to avoid immer proxy issues
+        const clone = JSON.parse(JSON.stringify(comp));
+        state.project.componentLibrary.push(clone);
         state.isDirty = true;
       }),
 
@@ -274,8 +278,13 @@ export const useProjectStore = create<ProjectState>()(
     updateCustomComponent: (comp) =>
       set((state) => {
         const idx = state.project.componentLibrary.findIndex((c) => c.id === comp.id);
-        if (idx >= 0) state.project.componentLibrary[idx] = comp;
+        if (idx >= 0) state.project.componentLibrary[idx] = JSON.parse(JSON.stringify(comp));
         state.isDirty = true;
+      }),
+
+    setEditingComponent: (id) =>
+      set((state) => {
+        state.editingComponentId = id;
       }),
 
     markDirty: () => set((state) => { state.isDirty = true; }),

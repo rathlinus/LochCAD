@@ -33,6 +33,8 @@ import {
   Info,
   Lightbulb,
   ToggleLeft,
+  Store,
+  Globe,
 } from 'lucide-react';
 import { v4 as uuid } from 'uuid';
 import type {
@@ -538,12 +540,74 @@ const defaultState: EditorState = {
 
 interface TemplateSelectionProps {
   onSelect: (template: ComponentTemplate) => void;
+  customComponents?: ComponentDefinition[];
+  onEditComponent?: (comp: ComponentDefinition) => void;
+  onDeleteComponent?: (id: string) => void;
 }
 
-function TemplateSelection({ onSelect }: TemplateSelectionProps) {
+function TemplateSelection({ onSelect, customComponents = [], onEditComponent, onDeleteComponent }: TemplateSelectionProps) {
   return (
     <div className="flex-1 overflow-y-auto min-h-0 animate-fade-in">
       <div className="max-w-2xl mx-auto px-6 py-6">
+
+        {/* My Custom Parts */}
+        {customComponents.length > 0 && (
+          <div className="mb-6">
+            <h2 className="text-sm font-semibold text-lochcad-text flex items-center gap-2 mb-1">
+              <Package size={14} className="text-lochcad-accent" />
+              Meine Bauteile
+            </h2>
+            <p className="text-[11px] text-lochcad-text-dim mb-3 ml-[22px]">
+              Deine selbst erstellten Bauteile — klicke zum Bearbeiten.
+            </p>
+            <div className="space-y-1">
+              {customComponents.map((comp) => (
+                <div
+                  key={comp.id}
+                  className="group w-full flex items-center gap-3 px-3 py-2.5 rounded-lg
+                    bg-lochcad-surface/50 border border-lochcad-panel/20
+                    hover:bg-lochcad-accent/10 hover:border-lochcad-accent/30
+                    transition-all duration-100"
+                >
+                  <div className="w-9 h-9 rounded-lg bg-lochcad-bg border border-lochcad-panel/30
+                    flex items-center justify-center text-lochcad-accent
+                    group-hover:border-lochcad-accent/40 group-hover:bg-lochcad-accent/5 transition-colors shrink-0">
+                    <Package size={16} />
+                  </div>
+                  <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onEditComponent?.(comp)}>
+                    <div className="text-xs font-semibold text-lochcad-text group-hover:text-lochcad-accent transition-colors">
+                      {comp.name || 'Unbenanntes Bauteil'}
+                    </div>
+                    <div className="text-[10px] text-lochcad-text-dim leading-snug mt-0.5 truncate">
+                      {comp.category} · {comp.prefix} · {comp.symbol.pins?.length || 0} Pins
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => onEditComponent?.(comp)}
+                      className="btn-icon w-6 h-6 text-lochcad-text-dim hover:text-lochcad-accent"
+                      title="Bearbeiten"
+                    >
+                      <Pencil size={12} />
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm(`"${comp.name}" wirklich löschen?`)) {
+                          onDeleteComponent?.(comp.id);
+                        }
+                      }}
+                      className="btn-icon w-6 h-6 text-lochcad-text-dim hover:text-red-400"
+                      title="Löschen"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Header area — compact, left-aligned like a panel header */}
         <div className="mb-5">
           <h2 className="text-sm font-semibold text-lochcad-text flex items-center gap-2">
@@ -585,6 +649,25 @@ function TemplateSelection({ onSelect }: TemplateSelectionProps) {
             </button>
           ))}
         </div>
+
+        {/* Marketplace placeholder */}
+        <div className="mt-8 mb-4">
+          <h2 className="text-sm font-semibold text-lochcad-text flex items-center gap-2 mb-1">
+            <Globe size={14} className="text-lochcad-text-dim" />
+            Marktplatz
+          </h2>
+          <div className="mt-3 flex flex-col items-center justify-center py-8 px-4 rounded-lg
+            border border-dashed border-lochcad-panel/30 bg-lochcad-surface/20">
+            <Store size={28} className="text-lochcad-text-dim/30 mb-2" />
+            <p className="text-xs text-lochcad-text-dim text-center">
+              Der Bauteil-Marktplatz kommt bald!
+            </p>
+            <p className="text-[10px] text-lochcad-text-dim/60 text-center mt-1 max-w-xs">
+              Hier kannst du Bauteile von der Community herunterladen und deine eigenen teilen.
+            </p>
+          </div>
+        </div>
+
       </div>
     </div>
   );
@@ -1569,9 +1652,104 @@ const ComponentEditor: React.FC = () => {
   const [step, setStep] = useState<CreatorStep>('template');
   const [state, setState] = useState<EditorState>({ ...defaultState });
   const [selectedTemplate, setSelectedTemplate] = useState<ComponentTemplate | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const addCustomComponent = useProjectStore(s => s.addCustomComponent);
+  const updateCustomComponent = useProjectStore(s => s.updateCustomComponent);
+  const removeCustomComponent = useProjectStore(s => s.removeCustomComponent);
+  const customComponents = useProjectStore(s => s.project.componentLibrary ?? []);
   const setCurrentView = useProjectStore(s => s.setCurrentView);
+  const editingComponentId = useProjectStore(s => s.editingComponentId);
+  const setEditingComponent = useProjectStore(s => s.setEditingComponent);
+
+  // Load existing component for editing
+  useEffect(() => {
+    if (editingComponentId) {
+      const comp = customComponents.find(c => c.id === editingComponentId);
+      if (comp) {
+        // Build editor state from the existing component
+        const pins = comp.symbol.pins || [];
+        const pinToPad: Record<string, string> = {};
+        if (comp.pinMapping) {
+          pins.forEach(pin => {
+            const padNum = comp.pinMapping[pin.number];
+            if (padNum) {
+              const pad = comp.footprint.pads.find(p => p.number === padNum);
+              if (pad) {
+                pinToPad[pin.id ?? pin.number] = pad.id ?? pad.number;
+              }
+            }
+          });
+        }
+
+        setState({
+          name: comp.name,
+          prefix: comp.prefix || 'X',
+          category: comp.category,
+          description: comp.description || '',
+          templateId: '',
+          pinCount: pins.length,
+          pinNames: pins.map(p => p.name),
+          pinTypes: pins.map(p => p.electricalType),
+          graphics: comp.symbol.graphics || [],
+          pins,
+          pads: comp.footprint.pads || [],
+          spanHoles: comp.footprint.spanHoles || { col: 1, row: 1 },
+          pinToPad,
+          defaultProperties: comp.defaultProperties || {},
+          spiceModel: comp.spiceModel || '',
+          spiceTemplate: comp.spiceTemplate || '',
+          model3dShape: (comp.model3d?.type === 'parametric' ? comp.model3d.shape : 'custom'),
+          model3dParams: (comp.model3d?.type === 'parametric' ? comp.model3d.params : {}),
+        });
+        setEditingId(editingComponentId);
+        setSelectedTemplate(TEMPLATES[TEMPLATES.length - 1]); // blank template for advanced editing
+        setStep('preview');
+        setEditingComponent(null); // clear the store flag
+      }
+    }
+  }, [editingComponentId]);
+
+  // Edit a custom component from the template page
+  const handleEditCustom = useCallback((comp: ComponentDefinition) => {
+    const pins = comp.symbol.pins || [];
+    const pinToPad: Record<string, string> = {};
+    if (comp.pinMapping) {
+      pins.forEach(pin => {
+        const padNum = comp.pinMapping[pin.number];
+        if (padNum) {
+          const pad = comp.footprint.pads.find(p => p.number === padNum);
+          if (pad) {
+            pinToPad[pin.id ?? pin.number] = pad.id ?? pad.number;
+          }
+        }
+      });
+    }
+
+    setState({
+      name: comp.name,
+      prefix: comp.prefix || 'X',
+      category: comp.category,
+      description: comp.description || '',
+      templateId: '',
+      pinCount: pins.length,
+      pinNames: pins.map(p => p.name),
+      pinTypes: pins.map(p => p.electricalType),
+      graphics: comp.symbol.graphics || [],
+      pins,
+      pads: comp.footprint.pads || [],
+      spanHoles: comp.footprint.spanHoles || { col: 1, row: 1 },
+      pinToPad,
+      defaultProperties: comp.defaultProperties || {},
+      spiceModel: comp.spiceModel || '',
+      spiceTemplate: comp.spiceTemplate || '',
+      model3dShape: (comp.model3d?.type === 'parametric' ? comp.model3d.shape : 'custom'),
+      model3dParams: (comp.model3d?.type === 'parametric' ? comp.model3d.params : {}),
+    });
+    setEditingId(comp.id);
+    setSelectedTemplate(TEMPLATES[TEMPLATES.length - 1]);
+    setStep('preview');
+  }, []);
 
   // Step 1: Template selected
   const handleTemplateSelect = useCallback((tpl: ComponentTemplate) => {
@@ -1693,12 +1871,12 @@ const ComponentEditor: React.FC = () => {
     });
 
     const def: ComponentDefinition = {
-      id: `custom_${uuid()}`,
-      name: state.name,
+      id: editingId || `custom_${uuid()}`,
+      name: state.name || 'Unbenanntes Bauteil',
       prefix: state.prefix,
       category: state.category,
       description: state.description,
-      keywords: [state.name.toLowerCase(), state.category.toLowerCase()],
+      keywords: [(state.name || '').toLowerCase(), state.category.toLowerCase()],
       symbol,
       footprint,
       model3d,
@@ -1708,13 +1886,18 @@ const ComponentEditor: React.FC = () => {
       defaultProperties: Object.keys(state.defaultProperties).length > 0 ? state.defaultProperties : undefined,
     };
 
-    addCustomComponent(def);
+    if (editingId) {
+      updateCustomComponent(def);
+    } else {
+      addCustomComponent(def);
+    }
 
     // Show success and reset
     setStep('template');
     setState({ ...defaultState });
     setSelectedTemplate(null);
-  }, [state, addCustomComponent]);
+    setEditingId(null);
+  }, [state, addCustomComponent, updateCustomComponent, editingId]);
 
   // Import / Export
   const handleExport = useCallback(() => {
@@ -1763,6 +1946,7 @@ const ComponentEditor: React.FC = () => {
               setStep('template');
               setSelectedTemplate(null);
               setState({ ...defaultState });
+              setEditingId(null);
             }
           }}
           className="btn-icon text-lochcad-text-dim hover:text-lochcad-text"
@@ -1828,7 +2012,12 @@ const ComponentEditor: React.FC = () => {
 
       {/* Body — step content */}
       {step === 'template' && (
-        <TemplateSelection onSelect={handleTemplateSelect} />
+        <TemplateSelection
+          onSelect={handleTemplateSelect}
+          customComponents={customComponents}
+          onEditComponent={handleEditCustom}
+          onDeleteComponent={removeCustomComponent}
+        />
       )}
       {step === 'configure' && selectedTemplate && (
         <ConfigurationForm
@@ -1846,6 +2035,7 @@ const ComponentEditor: React.FC = () => {
           template={selectedTemplate}
           onBack={() => setStep('configure')}
           onSave={handleSave}
+          editingExisting={!!editingId}
         />
       )}
     </div>

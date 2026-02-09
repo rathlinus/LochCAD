@@ -86,6 +86,7 @@ export async function loadProjectFile(file: File): Promise<Project> {
   if (!project.author) project.author = '';
   if (!project.tags) project.tags = [];
   if (!project.notes) project.notes = [];
+  if (!project.componentLibrary) project.componentLibrary = [];
 
   return project;
 }
@@ -135,7 +136,9 @@ export function loadAutoSavedProject(): Project | null {
   try {
     const json = localStorage.getItem(LS_KEY);
     if (!json) return null;
-    return JSON.parse(json) as Project;
+    const project = JSON.parse(json) as Project;
+    if (!project.componentLibrary) project.componentLibrary = [];
+    return project;
   } catch {
     return null;
   }
