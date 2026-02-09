@@ -20,7 +20,7 @@ import type {
 import { useProjectStore } from './projectStore';
 import { SCHEMATIC_GRID } from '@/constants';
 import { getBuiltInComponents } from '@/lib/component-library';
-import { routeSchematicWire, getComponentBBox, getComponentPinSegments, hasComponentCollision, buildOccupiedEdges, addWireEdges, wirePassesThroughBBox, findSameNetWireIds, buildRoutingContext, getWireEdgeSet, buildOtherNetPinCells } from '@/lib/engine/schematic-router';
+import { routeSchematicWire, getComponentBBox, getComponentPinSegments, getComponentPinTips, hasComponentCollision, buildOccupiedEdges, addWireEdges, wirePassesThroughBBox, findSameNetWireIds, buildRoutingContext, getWireEdgeSet, buildOtherNetPinCells } from '@/lib/engine/schematic-router';
 import type { BBox } from '@/lib/engine/schematic-router';
 import { useToastStore } from './toastStore';
 import type { ComponentSymbol } from '@/types';
@@ -183,6 +183,129 @@ function segmentsOverlap(a0: Point, a1: Point, b0: Point, b1: Point): boolean {
     return aMin < bMax - eps && aMax > bMin + eps;
   }
   return false;
+}
+
+/**
+ * Check whether a point lies on any segment of a wire (not just endpoints).
+ */
+function pointOnWire(pt: Point, wire: import('@/types').Wire): boolean {
+  for (let i = 0; i < wire.points.length - 1; i++) {
+    const a = wire.points[i];
+    const b = wire.points[i + 1];
+    // Check collinear + within bounds
+    const minX = Math.min(a.x, b.x) - EPS;
+    const maxX = Math.max(a.x, b.x) + EPS;
+    const minY = Math.min(a.y, b.y) - EPS;
+    const maxY = Math.max(a.y, b.y) + EPS;
+    if (pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY) {
+      // Check if point is on the segment (manhattan segments are axis-aligned)
+      const isHoriz = Math.abs(a.y - b.y) < EPS;
+      const isVert = Math.abs(a.x - b.x) < EPS;
+      if (isHoriz && Math.abs(pt.y - a.y) < EPS) return true;
+      if (isVert && Math.abs(pt.x - a.x) < EPS) return true;
+      // Also match exact point (zero-length segment or non-manhattan)
+      if (Math.abs(pt.x - a.x) < EPS && Math.abs(pt.y - a.y) < EPS) return true;
+    }
+  }
+  // Check last point
+  const last = wire.points[wire.points.length - 1];
+  if (Math.abs(pt.x - last.x) < EPS && Math.abs(pt.y - last.y) < EPS) return true;
+  return false;
+}
+
+/**
+ * After components / wires have been removed, iteratively remove wires
+ * whose terminal endpoints (first or last point) are not connected to
+ * anything — no remaining component pin, no other wire, no junction, no label.
+ *
+ * This prevents "dangling" stubs from being left behind when a component
+ * is deleted.  The process repeats until no more wires are removed (since
+ * removing one wire may cause another to become dangling).
+ */
+function removeDanglingWires(
+  schematic: import('@/types').SchematicDocument,
+  sheetId: string,
+  allLib: import('@/types').ComponentDefinition[],
+): void {
+  // Collect all pin-tip positions of remaining components on this sheet
+  const sheetComps = schematic.components.filter((c) => c.sheetId === sheetId);
+  const pinTips = new Set<string>();
+  for (const comp of sheetComps) {
+    const def = allLib.find((d) => d.id === comp.libraryId);
+    if (!def) continue;
+    for (const tip of getComponentPinTips(comp, def.symbol)) {
+      pinTips.add(`${Math.round(tip.x)},${Math.round(tip.y)}`);
+    }
+  }
+
+  // Junctions and labels on this sheet
+  const junctionPts = new Set<string>();
+  for (const j of schematic.junctions.filter((j) => j.sheetId === sheetId)) {
+    junctionPts.add(`${Math.round(j.position.x)},${Math.round(j.position.y)}`);
+  }
+  const labelPts = new Set<string>();
+  for (const l of schematic.labels.filter((l) => l.sheetId === sheetId)) {
+    labelPts.add(`${Math.round(l.position.x)},${Math.round(l.position.y)}`);
+  }
+
+  // Iteratively remove wires with floating endpoints
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const sheetWires = schematic.wires.filter((w) => w.sheetId === sheetId);
+    const toRemove = new Set<string>();
+
+    for (const wire of sheetWires) {
+      if (wire.points.length < 2) { toRemove.add(wire.id); changed = true; continue; }
+      const first = wire.points[0];
+      const last = wire.points[wire.points.length - 1];
+      const firstKey = `${Math.round(first.x)},${Math.round(first.y)}`;
+      const lastKey = `${Math.round(last.x)},${Math.round(last.y)}`;
+
+      // Check if endpoints are connected to a pin, junction, or label
+      const firstHasPin = pinTips.has(firstKey);
+      const lastHasPin = pinTips.has(lastKey);
+      const firstHasJunction = junctionPts.has(firstKey);
+      const lastHasJunction = junctionPts.has(lastKey);
+      const firstHasLabel = labelPts.has(firstKey);
+      const lastHasLabel = labelPts.has(lastKey);
+
+      // Check connection to other wires (any point on another wire)
+      let firstHasWire = false;
+      let lastHasWire = false;
+      for (const other of sheetWires) {
+        if (other.id === wire.id) continue;
+        if (toRemove.has(other.id)) continue;
+        if (!firstHasWire && pointOnWire(first, other)) firstHasWire = true;
+        if (!lastHasWire && pointOnWire(last, other)) lastHasWire = true;
+        if (firstHasWire && lastHasWire) break;
+      }
+
+      const firstConnected = firstHasPin || firstHasJunction || firstHasLabel || firstHasWire;
+      const lastConnected = lastHasPin || lastHasJunction || lastHasLabel || lastHasWire;
+
+      // Remove wire if EITHER endpoint is floating (not connected to anything)
+      if (!firstConnected || !lastConnected) {
+        toRemove.add(wire.id);
+        changed = true;
+      }
+    }
+
+    if (toRemove.size > 0) {
+      schematic.wires = schematic.wires.filter((w) => !toRemove.has(w.id));
+      // Also clean up orphaned junctions that no longer have wires at their position
+      const remainingWires = schematic.wires.filter((w) => w.sheetId === sheetId);
+      schematic.junctions = schematic.junctions.filter((j) => {
+        if (j.sheetId !== sheetId) return true;
+        return remainingWires.some((w) => pointOnWire(j.position, w));
+      });
+      // Update junction set for next iteration
+      junctionPts.clear();
+      for (const j of schematic.junctions.filter((j) => j.sheetId === sheetId)) {
+        junctionPts.add(`${Math.round(j.position.x)},${Math.round(j.position.y)}`);
+      }
+    }
+  }
 }
 
 /**
@@ -1038,7 +1161,13 @@ export const useSchematicStore = create<SchematicState>()(
     deleteComponent: (id) => {
       get().pushSnapshot();
       mutateSchematic((s) => {
+        const comp = s.components.find((c) => c.id === id);
+        const sheetId = comp?.sheetId;
         s.components = s.components.filter((c) => c.id !== id);
+        if (sheetId) {
+          const allLib = [...getBuiltInComponents(), ...useProjectStore.getState().project.componentLibrary];
+          removeDanglingWires(s, sheetId, allLib);
+        }
       });
     },
 
@@ -1251,11 +1380,27 @@ export const useSchematicStore = create<SchematicState>()(
     deleteSelected: () => {
       get().pushSnapshot();
       const sel = get().selection;
+      // Collect affected sheet IDs before deletion
+      const schematic = getSchematic();
+      const affectedSheets = new Set<string>();
+      for (const cid of sel.componentIds) {
+        const c = schematic.components.find((comp) => comp.id === cid);
+        if (c) affectedSheets.add(c.sheetId);
+      }
+      for (const wid of sel.wireIds) {
+        const w = schematic.wires.find((wire) => wire.id === wid);
+        if (w) affectedSheets.add(w.sheetId);
+      }
       mutateSchematic((s) => {
         s.components = s.components.filter((c) => !sel.componentIds.includes(c.id));
         s.wires = s.wires.filter((w) => !sel.wireIds.includes(w.id));
         s.labels = s.labels.filter((l) => !sel.labelIds.includes(l.id));
         s.junctions = s.junctions.filter((j) => !sel.junctionIds.includes(j.id));
+        // Clean up dangling wires on all affected sheets
+        const allLib = [...getBuiltInComponents(), ...useProjectStore.getState().project.componentLibrary];
+        for (const sid of affectedSheets) {
+          removeDanglingWires(s, sid, allLib);
+        }
       });
       set((state) => {
         state.selection = { componentIds: [], wireIds: [], labelIds: [], junctionIds: [] };

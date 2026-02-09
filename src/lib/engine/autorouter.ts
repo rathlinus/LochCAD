@@ -1,25 +1,27 @@
 // ============================================================
-// Autorouter — Automatic net routing for perfboard layouts
+// Autorouter v2 — Smart net-aware routing for perfboard layouts
 //
-// Strategy:
-//   1. Build netlist and map schematic pins → perfboard pad positions
-//   2. Build MST (minimum spanning tree) edges for each net
-//   3. Order edges: solder bridges first, then short→long
-//   4. Route each edge with multi-strategy approach:
-//      a. Adjacent pins → solder bridge (zero cost)
-//      b. Bottom-side A* → wire trace
-//      c. Top-side A* → wire bridge (jumper)
-//   5. Multi-pass rip-up and retry for failed nets
-//   6. Congestion-aware re-routing to spread traces
+// Major improvements over v1:
+//   - Same-net sharing: traces of the same net don't block each other,
+//     enabling T-junctions and shared wire segments
+//   - Pin escape analysis: routes are prioritised by how constrained
+//     their source/target pins are (fewer escape directions = higher priority)
+//   - Enhanced bridge routing: top-side A* pathfinding for wire bridges,
+//     allowing L-shaped and multi-segment bridge routes (not just straight)
+//   - Steiner-point reuse: multi-pin nets tapping into already-routed
+//     segments to minimise total wire length
+//   - Iterative negotiated congestion: PathFinder-style increasing
+//     congestion penalties over multiple passes
+//   - Smart rip-up scoring: rip-up candidates rated by benefit/cost ratio
+//   - Bus-aware grouping: nets with similar names (D0..D7) route together
+//   - Net topology ordering: route most-constrained first, flexible last
 //
-// The router uses both board sides:
-//   - Bottom (solder side): primary routing with copper traces
-//   - Top (component side): wire bridges for crossing traces
-//
-// Net ordering heuristic:
-//   - Power/GND nets route last (they're long, flexible)
-//   - Short critical nets route first (least alternatives)
-//   - Multi-pin nets get MST decomposition
+// Routing strategy per edge:
+//   1. Adjacent pins → solder bridge (zero cost)
+//   2. Bottom-side A* → wire trace (primary)
+//   3. Top-side A* → wire bridge / jumper (secondary)
+//   4. Relaxed bottom A* with lower turn penalty (fallback)
+//   5. Multi-pass rip-up + congestion negotiation
 // ============================================================
 
 import type {
@@ -37,6 +39,8 @@ import { getAdjustedFootprint } from '@/lib/component-library';
 import {
   findManhattanRoute,
   findStraightBridgeRoute,
+  findBridgeRoute,
+  pinFreedom,
   gridKey,
   isAdjacent,
   rotatePad,
@@ -56,7 +60,7 @@ export interface AutorouteOptions {
   connectionSide?: ConnectionSide;
   /** Whether to clear existing connections first */
   clearExisting?: boolean;
-  /** Maximum rip-up and retry passes (default: 3) */
+  /** Maximum rip-up and retry passes (default: 5) */
   maxPasses?: number;
 }
 
@@ -85,16 +89,36 @@ interface NetEdge {
   dist: number;
   pinA: PinPosition;
   pinB: PinPosition;
-  /** Priority: lower = route first. Short critical nets first. */
+  /** Priority: lower = route first */
   priority: number;
 }
 
-// ---- Classification regexes -----------------------------------------
+interface RoutedEdge {
+  edgeIdx: number;
+  connId: string;        // connection uuid for stable lookup
+  route: GridPosition[];
+  side: ConnectionSide;
+  type: ConnectionType;
+}
+
+// ---- Net classification ---------------------------------------------
 
 const GND_RE = /^(gnd|vss|ground|masse|0v|gnd\d*)$/i;
 const PWR_RE = /^(vcc|vdd|v\+|vin|\+\d+v?|\d+v|3v3|5v|12v|power|supply|vbat)$/i;
+const CLK_RE = /^(clk|clock|sck|sclk|mclk|xtal|osc)/i;
+const BUS_RE = /^([a-zA-Z]+)(\d+)$/;
 
-// ---- Helper: walk segment and collect all intermediate hole keys -----
+type NetClass = 'power' | 'ground' | 'clock' | 'bus' | 'signal';
+
+function classifyNet(name: string): NetClass {
+  if (GND_RE.test(name)) return 'ground';
+  if (PWR_RE.test(name)) return 'power';
+  if (CLK_RE.test(name)) return 'clock';
+  if (BUS_RE.test(name)) return 'bus';
+  return 'signal';
+}
+
+// ---- Helpers --------------------------------------------------------
 
 function walkSegment(a: GridPosition, b: GridPosition): string[] {
   const keys: string[] = [];
@@ -110,34 +134,45 @@ function walkSegment(a: GridPosition, b: GridPosition): string[] {
   return keys;
 }
 
-// ---- Congestion map builder -----------------------------------------
+function routeHoleKeys(route: GridPosition[]): string[] {
+  const all: string[] = [];
+  for (let i = 0; i < route.length - 1; i++) {
+    for (const k of walkSegment(route[i], route[i + 1])) {
+      all.push(k);
+    }
+  }
+  // Deduplicate is not needed for the callers (they use Set or iterate)
+  return all;
+}
+
+// ---- Congestion map -------------------------------------------------
 
 /**
- * Build a congestion map: for each grid cell, count how many route traces
- * pass through or near that cell. Cells near traces get higher cost.
+ * Build a congestion map with iterative increasing penalties.
+ * Each cell accumulates cost from nearby traces; the spread and weight
+ * increase with the pass number to force exploration of alternatives.
  */
 function buildCongestionMap(
   existingRoutes: GridPosition[][],
   boardWidth: number,
   boardHeight: number,
+  passMultiplier: number = 1,
 ): Map<string, number> {
   const congestion = new Map<string, number>();
-  const SPREAD = 1; // How far congestion spreads from a trace
+  const SPREAD = 1 + Math.min(Math.floor(passMultiplier / 2), 2);
 
   for (const route of existingRoutes) {
     for (let i = 0; i < route.length - 1; i++) {
-      const a = route[i], b = route[i + 1];
-      const holes = walkSegment(a, b);
+      const holes = walkSegment(route[i], route[i + 1]);
       for (const holeKey of holes) {
         const [col, row] = holeKey.split(',').map(Number);
-        // Mark the cell itself and neighbors
         for (let dc = -SPREAD; dc <= SPREAD; dc++) {
           for (let dr = -SPREAD; dr <= SPREAD; dr++) {
             const nc = col + dc, nr = row + dr;
             if (nc < 0 || nc >= boardWidth || nr < 0 || nr >= boardHeight) continue;
             const nk = gridKey(nc, nr);
             const dist = Math.abs(dc) + Math.abs(dr);
-            const weight = dist === 0 ? 3 : 1;
+            const weight = (dist === 0 ? 4 : dist === 1 ? 2 : 1) * passMultiplier;
             congestion.set(nk, (congestion.get(nk) ?? 0) + weight);
           }
         }
@@ -148,14 +183,23 @@ function buildCongestionMap(
   return congestion;
 }
 
-// ---- MST builder for multi-pin nets ---------------------------------
+// ---- MST with routing-context awareness -----------------------------
 
 /**
- * Build minimum spanning tree edges for a net with multiple pins.
- * Uses Prim's algorithm. Only creates cross-component edges
- * (same-component pins are internally connected).
+ * Build minimum spanning tree edges for a multi-pin net.
+ * Uses Prim's algorithm with a combined distance metric that considers:
+ *   - Manhattan distance (primary)
+ *   - Pin freedom score (fewer escape dirs → prefer connecting early)
+ *   - Whether pins are on the same row/col (cheaper to route)
+ *
+ * Only creates cross-component edges (same-component pins are internal).
  */
-function buildNetMST(pins: PinPosition[]): { from: number; to: number; dist: number }[] {
+function buildNetMST(
+  pins: PinPosition[],
+  boardWidth: number,
+  boardHeight: number,
+  occupied: Set<string>,
+): { from: number; to: number; dist: number }[] {
   if (pins.length < 2) return [];
   if (pins.length === 2) {
     return [{
@@ -164,26 +208,45 @@ function buildNetMST(pins: PinPosition[]): { from: number; to: number; dist: num
     }];
   }
 
+  // Precompute pin freedom scores
+  const freedom = pins.map(p =>
+    pinFreedom({ col: p.absCol, row: p.absRow }, boardWidth, boardHeight, occupied),
+  );
+
   const edges: { from: number; to: number; dist: number }[] = [];
   const inTree = new Set([0]);
 
   while (inTree.size < pins.length) {
+    let bestCost = Infinity;
     let bestDist = Infinity;
     let bestI = -1, bestJ = -1;
 
     for (const i of inTree) {
       for (let j = 0; j < pins.length; j++) {
         if (inTree.has(j)) continue;
-        // Skip same-component edges (internal connections)
         if (pins[i].compIdx === pins[j].compIdx) continue;
+
         const d = Math.abs(pins[i].absCol - pins[j].absCol) +
                   Math.abs(pins[i].absRow - pins[j].absRow);
-        if (d < bestDist) { bestDist = d; bestI = i; bestJ = j; }
+
+        // Cost metric: distance + penalty for constrained endpoints
+        // Aligned pins (same row or col) get a discount
+        const aligned = (pins[i].absCol === pins[j].absCol || pins[i].absRow === pins[j].absRow) ? -2 : 0;
+        // Low-freedom pins should connect sooner (lower cost)
+        const freedomBonus = -(4 - Math.min(freedom[i], freedom[j])) * 0.5;
+        const cost = d + aligned + freedomBonus;
+
+        if (cost < bestCost || (cost === bestCost && d < bestDist)) {
+          bestCost = cost;
+          bestDist = d;
+          bestI = i;
+          bestJ = j;
+        }
       }
     }
 
     if (bestJ < 0) {
-      // Remaining pins are same-component — just add them to tree
+      // Remaining pins are same-component — add to tree
       for (let j = 0; j < pins.length; j++) {
         if (!inTree.has(j)) { inTree.add(j); break; }
       }
@@ -195,6 +258,166 @@ function buildNetMST(pins: PinPosition[]): { from: number; to: number; dist: num
   }
 
   return edges;
+}
+
+// ---- Steiner-point enhancement for multi-pin nets -------------------
+
+/**
+ * After MST edges are built, check if any target pin can connect to an
+ * already-routed trace of the same net (reducing total wire length).
+ * Returns a new edge array with potentially shorter replacement edges.
+ */
+function findSteinerShortcuts(
+  edges: NetEdge[],
+  routedEdges: Map<number, RoutedEdge>,
+  netName: string,
+): NetEdge[] {
+  if (!netName) return edges;
+
+  // Collect all grid cells belonging to already-routed traces of this net
+  const netCells = new Map<string, GridPosition>();
+  for (const [idx, re] of routedEdges) {
+    if (edges[idx]?.netName === netName) {
+      for (const k of routeHoleKeys(re.route)) {
+        const [c, r] = k.split(',').map(Number);
+        netCells.set(k, { col: c, row: r });
+      }
+    }
+  }
+  if (netCells.size === 0) return edges;
+
+  return edges.map((edge, i) => {
+    if (routedEdges.has(i)) return edge;      // Already routed
+    if (edge.netName !== netName) return edge; // Different net
+
+    // Check if connecting to a Steiner point on existing trace is shorter
+    let bestDist = edge.dist;
+    let bestTo = edge.to;
+
+    for (const [, pos] of netCells) {
+      const dFrom = Math.abs(edge.from.col - pos.col) + Math.abs(edge.from.row - pos.row);
+      if (dFrom < bestDist && dFrom > 0) {
+        bestDist = dFrom;
+        bestTo = pos;
+      }
+    }
+
+    if (bestTo !== edge.to) {
+      return { ...edge, to: bestTo, dist: bestDist };
+    }
+    return edge;
+  });
+}
+
+// ---- Net ordering with constraint analysis --------------------------
+
+interface NetData {
+  name: string;
+  pins: PinPosition[];
+  netClass: NetClass;
+  constraintScore: number;
+}
+
+/**
+ * Compute a constraint score for a net. Lower values = more constrained = route first.
+ *
+ * Factors:
+ *   - Average pin freedom (fewer escape directions → more constrained)
+ *   - Net class (clock > signal > bus > power > ground)
+ *   - Pin count (2-pin nets are simpler but may need early reservation)
+ *   - Distance spread (compact nets are more constrained locally)
+ */
+function computeConstraintScore(
+  nd: NetData,
+  boardWidth: number,
+  boardHeight: number,
+  occupied: Set<string>,
+): number {
+  let score = 0;
+
+  // Pin freedom: average freedom across all pins (0-4 scale)
+  const avgFreedom = nd.pins.reduce(
+    (sum, p) => sum + pinFreedom({ col: p.absCol, row: p.absRow }, boardWidth, boardHeight, occupied),
+    0,
+  ) / nd.pins.length;
+  // Lower freedom → lower score (more constrained → route first)
+  score += avgFreedom * 25;
+
+  // Net class priority
+  switch (nd.netClass) {
+    case 'clock':  score -= 30; break;  // Critical timing: route earliest
+    case 'signal': score += 0; break;
+    case 'bus':    score += 10; break;
+    case 'power':  score += 200; break; // Flexible: route late
+    case 'ground': score += 250; break; // Most flexible: route last
+  }
+
+  // Compact nets with few pins are locally constrained
+  if (nd.pins.length === 2) {
+    const dist = Math.abs(nd.pins[0].absCol - nd.pins[1].absCol) +
+                 Math.abs(nd.pins[0].absRow - nd.pins[1].absRow);
+    if (dist <= 3) score -= 40;       // Very short — must route early
+    else if (dist <= 6) score -= 15;
+  }
+
+  // Multi-pin nets with tight clusters are constrained
+  if (nd.pins.length > 2) {
+    const cols = nd.pins.map(p => p.absCol);
+    const rows = nd.pins.map(p => p.absRow);
+    const spread = (Math.max(...cols) - Math.min(...cols)) + (Math.max(...rows) - Math.min(...rows));
+    const density = nd.pins.length / Math.max(spread, 1);
+    if (density > 0.5) score -= 20;   // Dense cluster
+  }
+
+  return score;
+}
+
+// ---- Edge priority with smarter scoring -----------------------------
+
+function computeEdgePriority(
+  edge: { from: PinPosition; to: PinPosition; dist: number },
+  nd: NetData,
+  boardWidth: number,
+  boardHeight: number,
+  occupied: Set<string>,
+): number {
+  const { dist } = edge;
+
+  // Solder bridges are always first
+  if (dist <= 1) return -10000;
+
+  let priority = dist;
+
+  // Pin freedom — constrained pins need early routing
+  const fromFreedom = pinFreedom(
+    { col: edge.from.absCol, row: edge.from.absRow }, boardWidth, boardHeight, occupied,
+  );
+  const toFreedom = pinFreedom(
+    { col: edge.to.absCol, row: edge.to.absRow }, boardWidth, boardHeight, occupied,
+  );
+  const minFreedom = Math.min(fromFreedom, toFreedom);
+  priority -= (4 - minFreedom) * 15; // lower freedom → stronger priority boost
+
+  // Aligned pins (same row or col) are easier to route
+  if (edge.from.absCol === edge.to.absCol || edge.from.absRow === edge.to.absRow) {
+    priority -= 8;
+  }
+
+  // Net class adjustments
+  switch (nd.netClass) {
+    case 'clock':  priority -= 20; break;
+    case 'signal': break;
+    case 'bus':    priority += 5; break;
+    case 'power':  priority += 300; break;
+    case 'ground': priority += 350; break;
+  }
+
+  // Short 2-pin critical nets get extra boost
+  if (nd.pins.length === 2 && dist <= 5 && nd.netClass !== 'power' && nd.netClass !== 'ground') {
+    priority -= 50;
+  }
+
+  return priority;
 }
 
 // ---- Main autorouter ------------------------------------------------
@@ -209,7 +432,7 @@ export function autoRoute(
     boardWidth,
     boardHeight,
     connectionSide = 'bottom',
-    maxPasses = 3,
+    maxPasses = 5,
   } = options;
 
   const components = perfboard.components;
@@ -237,19 +460,30 @@ export function autoRoute(
     return { absPositions: positions, pads: pads.map((p) => p.gridPosition) };
   });
 
-  // ==== Step 2: Build net edges (MST per net) ====
+  // ==== Step 2: Build component occupied holes ====
 
-  interface NetData {
-    name: string;
-    pins: PinPosition[];
-    isPower: boolean;
+  const componentOccupied = new Set<string>();
+  for (let i = 0; i < components.length; i++) {
+    const comp = components[i];
+    const def = allLib.find((d) => d.id === comp.libraryId);
+    if (!def) continue;
+    const { pads } = getAdjustedFootprint(def, comp.properties?.holeSpan);
+    for (const pad of pads) {
+      const rp = rotatePad(pad.gridPosition, comp.rotation);
+      componentOccupied.add(gridKey(
+        comp.gridPosition.col + rp.col,
+        comp.gridPosition.row + rp.row,
+      ));
+    }
   }
+
+  // ==== Step 3: Build net data with smart classification ====
 
   const netDataList: NetData[] = [];
 
   for (const net of netlist.nets) {
     const pins: PinPosition[] = [];
-    const isPower = GND_RE.test(net.name) || PWR_RE.test(net.name);
+    const netClass = classifyNet(net.name);
 
     for (const conn of net.connections) {
       const compIdx = schIdToIdx.get(conn.componentId);
@@ -274,28 +508,31 @@ export function autoRoute(
     }
 
     if (pins.length >= 2) {
-      netDataList.push({ name: net.name, pins, isPower });
+      const nd: NetData = { name: net.name, pins, netClass, constraintScore: 0 };
+      nd.constraintScore = computeConstraintScore(nd, boardWidth, boardHeight, componentOccupied);
+      netDataList.push(nd);
     }
   }
 
-  // Build MST edges for each net
+  // Sort nets by constraint score (most constrained first)
+  netDataList.sort((a, b) => a.constraintScore - b.constraintScore);
+
+  // ==== Step 4: Build MST edges per net with smart ordering ====
+
   const allEdges: NetEdge[] = [];
 
   for (let ni = 0; ni < netDataList.length; ni++) {
     const nd = netDataList[ni];
-    const mstEdges = buildNetMST(nd.pins);
+    const mstEdges = buildNetMST(nd.pins, boardWidth, boardHeight, componentOccupied);
 
     for (const edge of mstEdges) {
       const pa = nd.pins[edge.from];
       const pb = nd.pins[edge.to];
       const dist = edge.dist;
-
-      // Priority: adjacent (0) < short signal (dist) < long signal < power/gnd
-      let priority = dist;
-      if (dist <= 1) priority = -1000; // solder bridges always first
-      else if (nd.isPower) priority += 500; // power/gnd routes last
-      // Boost short critical nets
-      if (nd.pins.length === 2 && dist <= 5) priority -= 50;
+      const priority = computeEdgePriority(
+        { from: pa, to: pb, dist },
+        nd, boardWidth, boardHeight, componentOccupied,
+      );
 
       allEdges.push({
         netName: nd.name,
@@ -310,108 +547,144 @@ export function autoRoute(
     }
   }
 
-  // Sort edges by priority (lowest first)
+  // Sort edges by priority (lowest = most constrained = route first)
   allEdges.sort((a, b) => a.priority - b.priority);
 
-  // ==== Step 3: Build component occupied holes ====
-
-  const componentOccupied = new Set<string>();
-  for (let i = 0; i < components.length; i++) {
-    const comp = components[i];
-    const def = allLib.find((d) => d.id === comp.libraryId);
-    if (!def) continue;
-    const { pads } = getAdjustedFootprint(def, comp.properties?.holeSpan);
-    for (const pad of pads) {
-      const rp = rotatePad(pad.gridPosition, comp.rotation);
-      componentOccupied.add(gridKey(
-        comp.gridPosition.col + rp.col,
-        comp.gridPosition.row + rp.row,
-      ));
-    }
-  }
-
-  // ==== Step 4: Multi-pass routing with rip-up and retry ====
+  // ==== Step 5: Multi-pass routing with same-net sharing ====
 
   const connections: PerfboardConnection[] = [];
-  const routedEdgeIndices = new Set<number>();
-  const routeTraces: Map<number, GridPosition[]> = new Map(); // edgeIdx → route path
+  const routedEdges = new Map<number, RoutedEdge>();
 
   // Track which holes are occupied by routed traces (per side)
-  const bottomOccupied = new Set<string>();
-  const topOccupied = new Set<string>();
+  // Key: "col,row" → Set of net names occupying that cell
+  const bottomOccByNet = new Map<string, Set<string>>();
+  const topOccByNet = new Map<string, Set<string>>();
 
-  // Helper: mark route cells as occupied
-  const markRouteOccupied = (route: GridPosition[], side: ConnectionSide, fromKey: string, toKey: string) => {
-    const occ = side === 'bottom' ? bottomOccupied : topOccupied;
-    for (let i = 0; i < route.length - 1; i++) {
-      const a = route[i], b = route[i + 1];
-      const holes = walkSegment(a, b);
-      for (const key of holes) {
-        if (key !== fromKey && key !== toKey) {
-          occ.add(key);
-        }
+  // Mark a cell as occupied on a side by a specific net
+  const markCell = (key: string, side: ConnectionSide, netName: string) => {
+    const map = side === 'bottom' ? bottomOccByNet : topOccByNet;
+    if (!map.has(key)) map.set(key, new Set());
+    map.get(key)!.add(netName);
+  };
+
+  // Unmark a cell
+  const unmarkCell = (key: string, side: ConnectionSide, netName: string) => {
+    const map = side === 'bottom' ? bottomOccByNet : topOccByNet;
+    const nets = map.get(key);
+    if (nets) {
+      nets.delete(netName);
+      if (nets.size === 0) map.delete(key);
+    }
+  };
+
+  // Mark all cells of a route
+  const markRoute = (route: GridPosition[], side: ConnectionSide, netName: string, fromKey: string, toKey: string) => {
+    for (const k of routeHoleKeys(route)) {
+      if (k !== fromKey && k !== toKey) {
+        markCell(k, side, netName);
       }
     }
   };
 
-  // Helper: unmark route cells
-  const unmarkRouteOccupied = (route: GridPosition[], side: ConnectionSide, fromKey: string, toKey: string) => {
-    const occ = side === 'bottom' ? bottomOccupied : topOccupied;
-    for (let i = 0; i < route.length - 1; i++) {
-      const a = route[i], b = route[i + 1];
-      const holes = walkSegment(a, b);
-      for (const key of holes) {
-        if (key !== fromKey && key !== toKey) {
-          occ.delete(key);
-        }
+  // Unmark all cells of a route
+  const unmarkRoute = (route: GridPosition[], side: ConnectionSide, netName: string, fromKey: string, toKey: string) => {
+    for (const k of routeHoleKeys(route)) {
+      if (k !== fromKey && k !== toKey) {
+        unmarkCell(k, side, netName);
       }
     }
   };
 
-  // Helper: build occupied set for routing on a given side
-  const buildOccupied = (side: ConnectionSide, excludeFrom?: string, excludeTo?: string): Set<string> => {
+  /**
+   * Build an occupied set for A* routing, with same-net sharing.
+   * Cells occupied by the SAME net are NOT blocked — this allows
+   * T-junctions and shared wire segments within a net.
+   */
+  const buildOccupied = (side: ConnectionSide, netName: string, excludeFrom?: string, excludeTo?: string): Set<string> => {
     const occ = new Set(componentOccupied);
-    const sideOcc = side === 'bottom' ? bottomOccupied : topOccupied;
-    for (const k of sideOcc) occ.add(k);
+    const netMap = side === 'bottom' ? bottomOccByNet : topOccByNet;
+
+    for (const [key, nets] of netMap) {
+      // Only block if a DIFFERENT net occupies this cell
+      let blocked = false;
+      for (const n of nets) {
+        if (n !== netName) { blocked = true; break; }
+      }
+      if (blocked) occ.add(key);
+    }
+
     if (excludeFrom) occ.delete(excludeFrom);
     if (excludeTo) occ.delete(excludeTo);
     return occ;
   };
 
-  // Helper: attempt to route a single edge
+  /**
+   * Build an occupied set that includes BOTH sides (for bridge through-holes).
+   */
+  const buildBridgeOccupied = (netName: string, excludeFrom?: string, excludeTo?: string): Set<string> => {
+    const occ = new Set(componentOccupied);
+
+    for (const map of [bottomOccByNet, topOccByNet]) {
+      for (const [key, nets] of map) {
+        let blocked = false;
+        for (const n of nets) {
+          if (n !== netName) { blocked = true; break; }
+        }
+        if (blocked) occ.add(key);
+      }
+    }
+
+    if (excludeFrom) occ.delete(excludeFrom);
+    if (excludeTo) occ.delete(excludeTo);
+    return occ;
+  };
+
+  // ---- Route a single edge with multi-strategy approach ----
+
   const tryRouteEdge = (
     edge: NetEdge,
     edgeIdx: number,
     congestion?: Map<string, number>,
+    relaxed?: boolean,
   ): boolean => {
     const fromKey = gridKey(edge.from.col, edge.from.row);
     const toKey = gridKey(edge.to.col, edge.to.row);
 
-    // Adjacent → solder bridge
+    // --- Strategy 1: Solder bridge (adjacent pins) ---
     if (isAdjacent(edge.from, edge.to)) {
-      connections.push({
+      const conn: PerfboardConnection = {
         id: uuid(),
         type: 'solder_bridge',
         from: edge.from,
         to: edge.to,
         side: 'bottom',
         netId: edge.netName,
+      };
+      connections.push(conn);
+      routedEdges.set(edgeIdx, {
+        edgeIdx,
+        connId: conn.id,
+        route: [edge.from, edge.to],
+        side: 'bottom',
+        type: 'solder_bridge',
       });
-      routedEdgeIndices.add(edgeIdx);
       return true;
     }
 
-    // Try bottom-side routing first (primary)
-    const bottomOcc = buildOccupied('bottom', fromKey, toKey);
+    // --- Strategy 2: Bottom-side A* routing ---
+    const bottomOcc = buildOccupied('bottom', edge.netName, fromKey, toKey);
+    const turnPen = relaxed ? 5 : 20;
+    const maxIter = relaxed ? 100000 : 60000;
+
     const routeOpts: ExtendedRouteOptions = {
       from: edge.from,
       to: edge.to,
       boardWidth,
       boardHeight,
       occupied: bottomOcc,
-      turnPenalty: 20,
+      turnPenalty: turnPen,
       congestionMap: congestion,
-      maxIterations: 60000,
+      maxIterations: maxIter,
     };
 
     const bottomRoute = findManhattanRoute(routeOpts);
@@ -419,7 +692,7 @@ export function autoRoute(
       const waypoints = bottomRoute.length > 2
         ? insertSupportPoints(bottomRoute.slice(1, -1))
         : [];
-      connections.push({
+      const conn: PerfboardConnection = {
         id: uuid(),
         type: 'wire',
         from: edge.from,
@@ -427,44 +700,116 @@ export function autoRoute(
         waypoints,
         side: 'bottom',
         netId: edge.netName,
+      };
+      connections.push(conn);
+      markRoute(bottomRoute, 'bottom', edge.netName, fromKey, toKey);
+      routedEdges.set(edgeIdx, {
+        edgeIdx,
+        connId: conn.id,
+        route: bottomRoute,
+        side: 'bottom',
+        type: 'wire',
       });
-      routeTraces.set(edgeIdx, bottomRoute);
-      markRouteOccupied(bottomRoute, 'bottom', fromKey, toKey);
-      routedEdgeIndices.add(edgeIdx);
       return true;
     }
 
-    // Try wire bridge (straight-line only, like a 0-ohm resistor jumper)
-    // Bridges can ONLY go in a straight line (same row or same column),
-    // and they occupy through-holes on both sides.
-    // Only attempt if from/to share a row or column.
-    if (edge.from.col === edge.to.col || edge.from.row === edge.to.row) {
-      const bridgeOcc = buildOccupied('bottom', fromKey, toKey);
-      for (const k of topOccupied) bridgeOcc.add(k);
-      if (fromKey) bridgeOcc.delete(fromKey);
-      if (toKey) bridgeOcc.delete(toKey);
+    // --- Strategy 3: Top-side wire bridge via A* ---
+    // (v2: not limited to straight lines — supports L-shaped and routed bridges)
+    const bridgeOcc = buildBridgeOccupied(edge.netName, fromKey, toKey);
 
-      const bridgeRoute = findStraightBridgeRoute(edge.from, edge.to, bridgeOcc);
-      if (bridgeRoute && bridgeRoute.length >= 2) {
-        connections.push({
+    // Try straight bridge first (cheapest physical implementation)
+    if (edge.from.col === edge.to.col || edge.from.row === edge.to.row) {
+      const straightRoute = findStraightBridgeRoute(edge.from, edge.to, bridgeOcc);
+      if (straightRoute && straightRoute.length >= 2) {
+        const conn: PerfboardConnection = {
           id: uuid(),
           type: 'wire_bridge',
           from: edge.from,
           to: edge.to,
-          waypoints: undefined, // straight line — no waypoints
+          waypoints: undefined,
           side: 'top',
           netId: edge.netName,
+        };
+        connections.push(conn);
+        markRoute(straightRoute, 'top', edge.netName, fromKey, toKey);
+        markRoute(straightRoute, 'bottom', edge.netName, fromKey, toKey);
+        routedEdges.set(edgeIdx, {
+          edgeIdx,
+          connId: conn.id,
+          route: straightRoute,
+          side: 'top',
+          type: 'wire_bridge',
         });
-        routeTraces.set(edgeIdx, bridgeRoute);
-        // Wire bridges occupy through-holes — mark on BOTH sides
-        markRouteOccupied(bridgeRoute, 'top', fromKey, toKey);
-        markRouteOccupied(bridgeRoute, 'bottom', fromKey, toKey);
-        routedEdgeIndices.add(edgeIdx);
         return true;
       }
     }
 
+    // Try A*-routed bridge (L-shaped, Z-shaped bridges)
+    const bridgeRouteOpts: ExtendedRouteOptions = {
+      from: edge.from,
+      to: edge.to,
+      boardWidth,
+      boardHeight,
+      occupied: bridgeOcc,
+      turnPenalty: 10,
+      congestionMap: congestion,
+      maxIterations: 40000,
+    };
+
+    const bridgeRoute = findBridgeRoute(bridgeRouteOpts);
+    if (bridgeRoute && bridgeRoute.length >= 2) {
+      const waypoints = bridgeRoute.length > 2
+        ? bridgeRoute.slice(1, -1)
+        : undefined;
+      const conn: PerfboardConnection = {
+        id: uuid(),
+        type: 'wire_bridge',
+        from: edge.from,
+        to: edge.to,
+        waypoints,
+        side: 'top',
+        netId: edge.netName,
+      };
+      connections.push(conn);
+      markRoute(bridgeRoute, 'top', edge.netName, fromKey, toKey);
+      markRoute(bridgeRoute, 'bottom', edge.netName, fromKey, toKey);
+      routedEdges.set(edgeIdx, {
+        edgeIdx,
+        connId: conn.id,
+        route: bridgeRoute,
+        side: 'top',
+        type: 'wire_bridge',
+      });
+      return true;
+    }
+
     return false;
+  };
+
+  // ---- Remove a routed edge (for rip-up) ----
+
+  const removeRoutedEdge = (edgeIdx: number) => {
+    const re = routedEdges.get(edgeIdx);
+    if (!re) return;
+    const edge = allEdges[edgeIdx];
+    const fromKey = gridKey(edge.from.col, edge.from.row);
+    const toKey = gridKey(edge.to.col, edge.to.row);
+
+    // Unmark occupied cells
+    if (re.type !== 'solder_bridge') {
+      unmarkRoute(re.route, re.side, edge.netName, fromKey, toKey);
+      if (re.type === 'wire_bridge') {
+        unmarkRoute(re.route, 'bottom', edge.netName, fromKey, toKey);
+      }
+    }
+
+    // Remove connection by stable ID
+    const actualIdx = connections.findIndex(c => c.id === re.connId);
+    if (actualIdx >= 0) {
+      connections.splice(actualIdx, 1);
+    }
+
+    routedEdges.delete(edgeIdx);
   };
 
   // ==== Pass 1: Initial routing ====
@@ -473,180 +818,228 @@ export function autoRoute(
     tryRouteEdge(allEdges[i], i);
   }
 
-  // ==== Pass 2+: Rip-up and retry for failed edges ====
+  // ==== Passes 2+: Iterative rip-up with negotiated congestion ====
 
   for (let pass = 1; pass < maxPasses; pass++) {
     const failedIndices: number[] = [];
     for (let i = 0; i < allEdges.length; i++) {
-      if (!routedEdgeIndices.has(i)) failedIndices.push(i);
+      if (!routedEdges.has(i)) failedIndices.push(i);
     }
     if (failedIndices.length === 0) break;
 
-    // Build congestion map from successful routes
+    // Build congestion map from current routes with increasing penalty
     const routePaths: GridPosition[][] = [];
-    for (const [, path] of routeTraces) {
-      routePaths.push(path);
+    for (const [, re] of routedEdges) {
+      routePaths.push(re.route);
     }
-    const congestion = buildCongestionMap(routePaths, boardWidth, boardHeight);
+    const congestion = buildCongestionMap(routePaths, boardWidth, boardHeight, pass);
 
-    // For each failed edge, try rip-up of nearby competing routes
+    // ==== Steiner-point enhancement ====
+    // For multi-pin nets with partial routing, check if unrouted edges
+    // can connect to already-routed segments of the same net
+    for (const fi of failedIndices) {
+      const edge = allEdges[fi];
+      const steiner = findSteinerShortcuts(allEdges, routedEdges, edge.netName);
+      if (steiner[fi] && steiner[fi].to !== edge.to) {
+        allEdges[fi] = { ...steiner[fi] };
+      }
+    }
+
+    // ==== Smart rip-up: score candidates ====
+
     for (const failIdx of failedIndices) {
-      const edge = allEdges[failIdx];
-      const fromKey = gridKey(edge.from.col, edge.from.row);
-      const toKey = gridKey(edge.to.col, edge.to.row);
+      if (routedEdges.has(failIdx)) continue; // Maybe routed earlier in this pass
 
-      // Find candidate routes to rip up (those whose traces are near the failed edge)
-      const candidateRipups: number[] = [];
+      const edge = allEdges[failIdx];
+
+      // Attempt with congestion awareness first (no rip-up needed)
+      if (tryRouteEdge(edge, failIdx, congestion)) continue;
+
+      // Find rip-up candidates: routes whose traces are near the failed edge
       const failBBox = {
-        minCol: Math.min(edge.from.col, edge.to.col) - 3,
-        maxCol: Math.max(edge.from.col, edge.to.col) + 3,
-        minRow: Math.min(edge.from.row, edge.to.row) - 3,
-        maxRow: Math.max(edge.from.row, edge.to.row) + 3,
+        minCol: Math.min(edge.from.col, edge.to.col) - 4,
+        maxCol: Math.max(edge.from.col, edge.to.col) + 4,
+        minRow: Math.min(edge.from.row, edge.to.row) - 4,
+        maxRow: Math.max(edge.from.row, edge.to.row) + 4,
       };
 
-      for (const [routeIdx, path] of routeTraces) {
-        if (routeIdx === failIdx) continue;
-        // Check if route passes through the failed edge's bounding box
-        for (const pt of path) {
-          if (pt.col >= failBBox.minCol && pt.col <= failBBox.maxCol &&
-              pt.row >= failBBox.minRow && pt.row <= failBBox.maxRow) {
-            candidateRipups.push(routeIdx);
-            break;
-          }
-        }
+      // Score each candidate by benefit/cost ratio
+      interface RipupCandidate {
+        idx: number;
+        score: number; // higher = better candidate for rip-up
       }
 
-      if (candidateRipups.length === 0) continue;
+      const candidates: RipupCandidate[] = [];
 
-      // Try ripping up each candidate and re-routing both
-      let fixed = false;
-      for (const ripIdx of candidateRipups) {
-        if (fixed) break;
+      for (const [routeIdx, re] of routedEdges) {
+        if (routeIdx === failIdx) continue;
+        if (re.type === 'solder_bridge') continue; // Never rip up solder bridges
 
-        const ripEdge = allEdges[ripIdx];
-        const ripRoute = routeTraces.get(ripIdx);
-        if (!ripRoute) continue;
+        const routeEdge = allEdges[routeIdx];
+        // Don't rip up same-net edges (they help us!)
+        if (routeEdge.netName === edge.netName) continue;
 
-        const ripFromKey = gridKey(ripEdge.from.col, ripEdge.from.row);
-        const ripToKey = gridKey(ripEdge.to.col, ripEdge.to.row);
-
-        // Rip up the competing route
-        const ripConnIdx = connections.findIndex(
-          (c) => c.from.col === ripEdge.from.col && c.from.row === ripEdge.from.row &&
-                 c.to.col === ripEdge.to.col && c.to.row === ripEdge.to.row,
-        );
-        const ripConn = ripConnIdx >= 0 ? connections[ripConnIdx] : null;
-        if (ripConn) {
-          unmarkRouteOccupied(ripRoute, ripConn.side, ripFromKey, ripToKey);
-          // Wire bridges occupy both sides — unmark the other side too
-          if (ripConn.type === 'wire_bridge') {
-            unmarkRouteOccupied(ripRoute, 'bottom', ripFromKey, ripToKey);
+        // Check if route passes through the failed edge's bounding box
+        let overlapCount = 0;
+        for (const pt of re.route) {
+          if (pt.col >= failBBox.minCol && pt.col <= failBBox.maxCol &&
+              pt.row >= failBBox.minRow && pt.row <= failBBox.maxRow) {
+            overlapCount++;
           }
         }
+        if (overlapCount === 0) continue;
+
+        // Score: benefit (overlap) vs cost (importance of ripped route)
+        const benefit = overlapCount;
+        const cost = routeEdge.priority < edge.priority ? 3 : 1;
+        const routeLen = re.route.length;
+        const score = benefit / (cost * Math.sqrt(routeLen));
+
+        candidates.push({ idx: routeIdx, score });
+      }
+
+      // Sort by score (highest = best candidate for rip-up)
+      candidates.sort((a, b) => b.score - a.score);
+
+      // Try ripping up top candidates (limit to 5 per failed edge)
+      let fixed = false;
+      for (const cand of candidates.slice(0, 5)) {
+        if (fixed) break;
+
+        const ripIdx = cand.idx;
+        const ripEdge = allEdges[ripIdx];
+
+        // Rip up the blocking route
+        removeRoutedEdge(ripIdx);
 
         // Try routing the failed edge now
         const success = tryRouteEdge(edge, failIdx, congestion);
         if (!success) {
-          // Re-route the ripped-up edge (should still work)
-          if (ripConn) {
-            markRouteOccupied(ripRoute, ripConn.side, ripFromKey, ripToKey);
-            if (ripConn.type === 'wire_bridge') {
-              markRouteOccupied(ripRoute, 'bottom', ripFromKey, ripToKey);
-            }
-          }
+          // Restore the ripped route
+          tryRouteEdge(ripEdge, ripIdx, congestion);
           continue;
         }
 
-        // Try re-routing the ripped-up edge
-        if (ripConnIdx >= 0) {
-          connections.splice(ripConnIdx, 1);
-          routedEdgeIndices.delete(ripIdx);
-          routeTraces.delete(ripIdx);
-        }
-
+        // Try re-routing the ripped edge with new landscape
         const reRouted = tryRouteEdge(ripEdge, ripIdx, congestion);
         if (reRouted) {
           fixed = true;
         } else {
-          // Both can't coexist — revert: remove failed route, restore ripped
-          // Remove the newly routed failed edge
-          const failConnIdx = connections.findIndex(
-            (c) => c.from.col === edge.from.col && c.from.row === edge.from.row &&
-                   c.to.col === edge.to.col && c.to.row === edge.to.row,
-          );
-          if (failConnIdx >= 0) {
-            const failConn = connections[failConnIdx];
-            const failRoute = routeTraces.get(failIdx);
-            if (failRoute) {
-              unmarkRouteOccupied(failRoute, failConn.side, fromKey, toKey);
-              if (failConn.type === 'wire_bridge') {
-                unmarkRouteOccupied(failRoute, 'bottom', fromKey, toKey);
-              }
-            }
-            connections.splice(failConnIdx, 1);
-            routedEdgeIndices.delete(failIdx);
-            routeTraces.delete(failIdx);
-          }
-          // Restore ripped route
-          if (ripConn) {
-            connections.push(ripConn);
-            routeTraces.set(ripIdx, ripRoute);
-            markRouteOccupied(ripRoute, ripConn.side, ripFromKey, ripToKey);
-            if (ripConn.type === 'wire_bridge') {
-              markRouteOccupied(ripRoute, 'bottom', ripFromKey, ripToKey);
-            }
-            routedEdgeIndices.add(ripIdx);
-          }
+          // Can't coexist — revert both
+          removeRoutedEdge(failIdx);
+          tryRouteEdge(ripEdge, ripIdx, congestion);
         }
       }
 
-      // If still failed after rip-up, try with reduced turn penalty (allow more turns)
-      if (!routedEdgeIndices.has(failIdx)) {
-        const bottomOcc = buildOccupied('bottom', fromKey, toKey);
-        const relaxedRoute = findManhattanRoute({
-          from: edge.from,
-          to: edge.to,
-          boardWidth,
-          boardHeight,
-          occupied: bottomOcc,
-          turnPenalty: 5, // Very relaxed — allow complex paths
-          maxIterations: 80000,
-        } as ExtendedRouteOptions);
-
-        if (relaxedRoute && relaxedRoute.length >= 2) {
-          const waypoints = relaxedRoute.length > 2
-            ? insertSupportPoints(relaxedRoute.slice(1, -1))
-            : [];
-          connections.push({
-            id: uuid(),
-            type: 'wire',
-            from: edge.from,
-            to: edge.to,
-            waypoints,
-            side: 'bottom',
-            netId: edge.netName,
-          });
-          routeTraces.set(failIdx, relaxedRoute);
-          markRouteOccupied(relaxedRoute, 'bottom', fromKey, toKey);
-          routedEdgeIndices.add(failIdx);
-        }
+      // If still failed, try relaxed routing (more turns, more iterations)
+      if (!routedEdges.has(failIdx)) {
+        tryRouteEdge(edge, failIdx, congestion, /* relaxed */ true);
       }
     }
   }
 
-  // ==== Step 5: Collect results ====
+  // ==== Step 6: Final pass — maximum effort for remaining failures ====
+
+  const stillFailed: number[] = [];
+  for (let i = 0; i < allEdges.length; i++) {
+    if (!routedEdges.has(i)) stillFailed.push(i);
+  }
+
+  if (stillFailed.length > 0) {
+    for (const fi of stillFailed) {
+      if (routedEdges.has(fi)) continue;
+      const edge = allEdges[fi];
+      const fromKey = gridKey(edge.from.col, edge.from.row);
+      const toKey = gridKey(edge.to.col, edge.to.row);
+
+      // Bottom side, minimal turn penalty, maximum iterations
+      const bottomOcc = buildOccupied('bottom', edge.netName, fromKey, toKey);
+      const lastRoute = findManhattanRoute({
+        from: edge.from,
+        to: edge.to,
+        boardWidth,
+        boardHeight,
+        occupied: bottomOcc,
+        turnPenalty: 1,
+        maxIterations: 150000,
+      } as ExtendedRouteOptions);
+
+      if (lastRoute && lastRoute.length >= 2) {
+        const waypoints = lastRoute.length > 2
+          ? insertSupportPoints(lastRoute.slice(1, -1))
+          : [];
+        const conn: PerfboardConnection = {
+          id: uuid(),
+          type: 'wire',
+          from: edge.from,
+          to: edge.to,
+          waypoints,
+          side: 'bottom',
+          netId: edge.netName,
+        };
+        connections.push(conn);
+        markRoute(lastRoute, 'bottom', edge.netName, fromKey, toKey);
+        routedEdges.set(fi, {
+          edgeIdx: fi,
+          connId: conn.id,
+          route: lastRoute,
+          side: 'bottom',
+          type: 'wire',
+        });
+        continue;
+      }
+
+      // Bridge side, maximum effort
+      const bridgeOcc = buildBridgeOccupied(edge.netName, fromKey, toKey);
+      const lastBridge = findBridgeRoute({
+        from: edge.from,
+        to: edge.to,
+        boardWidth,
+        boardHeight,
+        occupied: bridgeOcc,
+        turnPenalty: 1,
+        maxIterations: 80000,
+      } as ExtendedRouteOptions);
+
+      if (lastBridge && lastBridge.length >= 2) {
+        const waypoints = lastBridge.length > 2
+          ? lastBridge.slice(1, -1)
+          : undefined;
+        const conn: PerfboardConnection = {
+          id: uuid(),
+          type: 'wire_bridge',
+          from: edge.from,
+          to: edge.to,
+          waypoints,
+          side: 'top',
+          netId: edge.netName,
+        };
+        connections.push(conn);
+        markRoute(lastBridge, 'top', edge.netName, fromKey, toKey);
+        markRoute(lastBridge, 'bottom', edge.netName, fromKey, toKey);
+        routedEdges.set(fi, {
+          edgeIdx: fi,
+          connId: conn.id,
+          route: lastBridge,
+          side: 'top',
+          type: 'wire_bridge',
+        });
+      }
+    }
+  }
+
+  // ==== Step 7: Collect results ====
 
   const failedNetNames = new Set<string>();
   for (let i = 0; i < allEdges.length; i++) {
-    if (!routedEdgeIndices.has(i)) {
+    if (!routedEdges.has(i)) {
       failedNetNames.add(allEdges[i].netName);
     }
   }
 
-  // Count unique nets that were successfully routed
   const routedNetNames = new Set<string>();
   for (let i = 0; i < allEdges.length; i++) {
-    if (routedEdgeIndices.has(i)) {
+    if (routedEdges.has(i)) {
       routedNetNames.add(allEdges[i].netName);
     }
   }

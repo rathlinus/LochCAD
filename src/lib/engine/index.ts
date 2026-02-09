@@ -7,7 +7,7 @@ export { runERC } from './erc';
 export type { ERCResult, ERCSeverity } from './erc';
 export { runDRC } from './drc';
 export type { DRCResult } from './drc';
-export { findManhattanRoute, findStraightBridgeRoute, getOccupiedHoles, getWireBridgeOccupiedHoles, hasCollision, gridKey, hasFootprintCollision, getFootprintBBox, gridBBoxOverlap, rotatePad, isAdjacent, insertSupportPoints, getLötpunkte, SUPPORT_INTERVAL } from './router';
+export { findManhattanRoute, findStraightBridgeRoute, findBridgeRoute, pinFreedom, getOccupiedHoles, getWireBridgeOccupiedHoles, hasCollision, gridKey, hasFootprintCollision, getFootprintBBox, gridBBoxOverlap, rotatePad, isAdjacent, insertSupportPoints, getLötpunkte, SUPPORT_INTERVAL } from './router';
 export type { GridBBox, ExtendedRouteOptions } from './router';
 export { routeSchematicWire, getComponentBBox, getComponentBodyBBox, bboxOverlap, buildOccupiedEdges, addWireEdges, wirePassesThroughBBox, findSameNetWireIds, buildRoutingContext, getWireEdgeSet } from './schematic-router';
 export type { BBox } from './schematic-router';

@@ -706,3 +706,136 @@ function fallbackLRoute(from: GridPosition, to: GridPosition): GridPosition[] {
   }
   return [from, { col: from.col, row: to.row }, to];
 }
+
+// ---- Top-side (bridge) A* router ----
+
+/**
+ * A* router for the top (component) side of the board.
+ * Unlike the bottom router, this creates wire-bridge connections that occupy
+ * through-holes on BOTH sides. Returns a simplified path or null.
+ *
+ * Uses the same core A* logic as findManhattanRoute but with bridge-specific
+ * cost model: slightly higher base cost (bridges are less desirable) and
+ * wider turns allowed since bridges are physically wire jumpers.
+ */
+export function findBridgeRoute(opts: ExtendedRouteOptions): GridPosition[] | null {
+  const { from, to, boardWidth, boardHeight, occupied } = opts;
+  const turnPen = opts.turnPenalty ?? 10; // lower turn penalty for bridges (wire jumpers are flexible)
+  const congestion = opts.congestionMap;
+  const maxIter = opts.maxIterations ?? 40000;
+
+  const startKey = gridKey(from.col, from.row);
+  const endKey = gridKey(to.col, to.row);
+
+  if (startKey === endKey) return [from];
+
+  // Try straight line first (most common bridge type)
+  if (from.col === to.col || from.row === to.row) {
+    const directPath = tryDirectLine(from, to, boardWidth, boardHeight, occupied, startKey, endKey);
+    if (directPath) return directPath;
+  }
+
+  // Try L-route (allows L-shaped bridges unlike the old straight-only approach)
+  const lPath = tryLRoute(from, to, boardWidth, boardHeight, occupied, startKey, endKey);
+  if (lPath) return lPath;
+
+  // Full A* with direction-aware state
+  const gScore = new Map<string, number>();
+  const cameFrom = new Map<string, string>();
+
+  const h = (col: number, row: number) =>
+    Math.abs(col - to.col) + Math.abs(row - to.row);
+
+  const startDir: DirIdx = 4;
+  const sk = `${startKey},${startDir}`;
+  gScore.set(sk, 0);
+
+  const heap = new MinHeap();
+  heap.push({ key: sk, f: h(from.col, from.row) });
+  const inOpen = new Set<string>([sk]);
+  const closed = new Set<string>();
+
+  const blocked = (col: number, row: number): boolean => {
+    const key = gridKey(col, row);
+    if (key === startKey || key === endKey) return false;
+    return occupied.has(key);
+  };
+
+  let iterations = 0;
+
+  while (heap.size > 0) {
+    if (++iterations > maxIter) return null;
+
+    const node = heap.pop()!;
+    const current = node.key;
+    inOpen.delete(current);
+
+    const parts = current.split(',');
+    const cc = +parts[0], cr = +parts[1], cdir = +parts[2] as DirIdx;
+    const posKey = gridKey(cc, cr);
+
+    if (posKey === endKey) {
+      const rawPath: GridPosition[] = [];
+      let k: string | undefined = current;
+      while (k) {
+        const p = k.split(',');
+        rawPath.unshift({ col: +p[0], row: +p[1] });
+        k = cameFrom.get(k);
+      }
+      return simplifyPath(rawPath);
+    }
+
+    closed.add(current);
+    const currentG = gScore.get(current) ?? Infinity;
+
+    for (let d = 0; d < 4; d++) {
+      const [dc, dr] = DIRS[d];
+      const nc = cc + dc;
+      const nr = cr + dr;
+      if (nc < 0 || nc >= boardWidth || nr < 0 || nr >= boardHeight) continue;
+      if (blocked(nc, nr)) continue;
+
+      const nk = `${gridKey(nc, nr)},${d}`;
+      if (closed.has(nk)) continue;
+
+      const isTurn = cdir !== 4 && d !== cdir;
+      // Bridge base cost is slightly higher (prefer bottom routing)
+      const stepCost = 1.5 + (isTurn ? turnPen : 0);
+      const congCost = congestion ? (congestion.get(gridKey(nc, nr)) ?? 0) : 0;
+      const tentativeG = currentG + stepCost + congCost;
+      const prevG = gScore.get(nk) ?? Infinity;
+
+      if (tentativeG < prevG) {
+        cameFrom.set(nk, current);
+        gScore.set(nk, tentativeG);
+        const f = tentativeG + h(nc, nr);
+        if (!inOpen.has(nk)) {
+          heap.push({ key: nk, f });
+          inOpen.add(nk);
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Evaluate how "free" a grid cell's neighborhood is — counts how many of the 4
+ * adjacent cells are unoccupied. Returns 0-4 (higher = more escape routes).
+ */
+export function pinFreedom(
+  pos: GridPosition,
+  boardWidth: number,
+  boardHeight: number,
+  occupied: Set<string>,
+): number {
+  let free = 0;
+  for (const [dc, dr] of DIRS) {
+    const nc = pos.col + dc;
+    const nr = pos.row + dr;
+    if (nc < 0 || nc >= boardWidth || nr < 0 || nr >= boardHeight) continue;
+    if (!occupied.has(gridKey(nc, nr))) free++;
+  }
+  return free;
+}
