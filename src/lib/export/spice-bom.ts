@@ -86,6 +86,11 @@ export interface BOMEntry {
   description: string;
   footprint: string;
   quantity: number;
+  category?: string;
+  manufacturer?: string;
+  partNumber?: string;
+  unit?: string;
+  remarks?: string;
 }
 
 export function generateBOM(schematic: SchematicDocument): BOMEntry[] {
@@ -108,6 +113,11 @@ export function generateBOM(schematic: SchematicDocument): BOMEntry[] {
           ? `${def.footprint.pads.length}-pin`
           : '',
         quantity: 1,
+        category: def?.category || '',
+        manufacturer: comp.properties?.manufacturer || def?.defaultProperties?.manufacturer || '',
+        partNumber: comp.properties?.partNumber || def?.defaultProperties?.partNumber || '',
+        unit: 'Stk.',
+        remarks: comp.properties?.remarks || '',
       });
     }
   }
@@ -130,274 +140,465 @@ export interface BOMProjectInfo {
   version?: string;
   createdAt?: string;
   sheetCount?: number;
+  documentNumber?: string;
+  revision?: string;
+  approvedBy?: string;
+  department?: string;
+  classification?: string;
 }
 
+/**
+ * Generates a DIN EN 62027 compliant HTML Bill of Materials
+ * with a title block per DIN EN ISO 7200.
+ */
 export function bomToHtml(bom: BOMEntry[], info?: BOMProjectInfo): string {
   const now = new Date();
   const dateStr = now.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
   const totalParts = bom.reduce((s, e) => s + e.quantity, 0);
   const totalPositions = bom.length;
   const projName = info?.name || 'Unbenanntes Projekt';
-  const projDesc = info?.description || '';
-  const projAuthor = info?.author || '';
+  const projDesc = info?.description || '\u2014';
+  const projAuthor = info?.author || '\u2014';
   const projVersion = info?.version || '1.0';
   const projCreated = info?.createdAt
     ? new Date(info.createdAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
-    : '';
+    : '\u2014';
   const sheetCount = info?.sheetCount ?? 1;
+  const docNumber = info?.documentNumber || `BOM-${projName.replace(/\s+/g, '-').substring(0, 20).toUpperCase()}`;
+  const revision = info?.revision || projVersion;
+  const approvedBy = info?.approvedBy || '';
+  const department = info?.department || '';
+  const classification = info?.classification || 'Intern';
 
-  const rows = bom.map((e, i) => `
-          <tr>
-            <td class="c">${i + 1}</td>
-            <td class="c">${e.quantity}</td>
-            <td>${e.reference}</td>
-            <td>${e.value}</td>
-            <td>${e.description}</td>
-            <td>${e.footprint}</td>
-            <td></td>
-          </tr>`).join('');
+  // Group entries by category for DIN EN 62027 structured listing
+  const categories = new Map<string, BOMEntry[]>();
+  for (const entry of bom) {
+    const cat = entry.category || 'Sonstige';
+    if (!categories.has(cat)) categories.set(cat, []);
+    categories.get(cat)!.push(entry);
+  }
+  const sortedCategories = Array.from(categories.entries()).sort((a, b) => a[0].localeCompare(b[0]));
 
-  // DIN EN ISO 7200 + DIN 6771 compliant Schriftfeld & parts list
+  // Build table rows grouped by category
+  let pos = 0;
+  let rows = '';
+  for (const [catName, entries] of sortedCategories) {
+    rows += `
+        <tr class="category-row">
+          <td colspan="9">${esc(catName)}</td>
+        </tr>`;
+    for (const e of entries) {
+      pos++;
+      rows += `
+        <tr>
+          <td class="center">${pos}</td>
+          <td class="center">${e.quantity}</td>
+          <td class="center">${esc(e.unit || 'Stk.')}</td>
+          <td class="mono">${esc(e.reference)}</td>
+          <td>${esc(e.description)}</td>
+          <td class="mono">${esc(e.value)}</td>
+          <td>${esc(e.footprint)}</td>
+          <td>${esc(e.manufacturer || '')}</td>
+          <td>${esc(e.partNumber || '')}</td>
+        </tr>`;
+    }
+  }
+
   return `<!DOCTYPE html>
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <title>Stueckliste - ${projName}</title>
+  <title>St\u00fcckliste \u2014 ${esc(projName)}</title>
   <style>
-    /* ---- Reset ---- */
+    /* ==== Reset & Base ==== */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    /* ---- Base ---- */
     html { font-size: 9pt; }
     body {
-      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-      color: #000;
-      background: #c0c0c0;
-      padding: 10mm;
+      font-family: 'Helvetica Neue', Helvetica, Arial, 'Liberation Sans', sans-serif;
+      color: #111;
+      background: #d0d0d0;
+      padding: 16px;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
 
-    /* ---- A4 Drawing Sheet ---- */
-    .sheet {
+    /* ==== A4 Page Container ==== */
+    .page {
       width: 210mm;
       min-height: 297mm;
       margin: 0 auto;
       background: #fff;
+      padding: 10mm 12mm 18mm 12mm;
+      box-shadow: 0 2px 12px rgba(0,0,0,.25);
       position: relative;
     }
 
-    /*  Drawing frame – uses padding to create DIN 6771-1 margins:
-        20mm left (binding edge), 10mm top/right/bottom.
-        The frame border sits on the inner edge of that padding. */
-    .frame {
-      margin: 10mm 10mm 10mm 20mm;
-      border: 0.7mm solid #000;
-      /* Use flex column so the Schriftfeld is pushed to the bottom */
-      display: flex;
-      flex-direction: column;
-      /* Frame inner height = 297 - 10 - 10 = 277mm minus border */
-      min-height: calc(297mm - 10mm - 10mm - 1.4mm);
-    }
-
-    /* Content area grows to fill available space */
-    .content {
-      flex: 1 1 auto;
-      padding: 5mm;
-    }
-
-    /* ================================================================
-       Schriftfeld (Title Block) – DIN EN ISO 7200 / DIN 6771-5
-       Sits at the bottom of the frame via flex layout.
-       ================================================================ */
-    .schriftfeld {
-      flex: 0 0 auto;
+    /* ============================================================
+       DIN EN ISO 7200 Title Block (Schriftfeld)
+       ============================================================ */
+    .title-block {
       width: 100%;
       border-collapse: collapse;
-      font-size: 7.5pt;
-      line-height: 1.3;
-    }
-
-    .schriftfeld td {
-      border: 0.35mm solid #000;
-      padding: 1.2mm 2mm;
-      vertical-align: middle;
-    }
-
-    /* Thick top border separating parts list from Schriftfeld */
-    .schriftfeld tr.sf-top td {
-      border-top: 0.7mm solid #000;
-    }
-
-    .schriftfeld .label {
-      font-size: 6pt;
-      color: #555;
-      display: block;
-      margin-bottom: 0.3mm;
-    }
-
-    .schriftfeld .val {
+      border: 1.2pt solid #000;
+      margin-bottom: 5mm;
       font-size: 8pt;
+      page-break-inside: avoid;
+    }
+    .title-block td, .title-block th {
+      border: 0.6pt solid #000;
+      padding: 1.5mm 2.5mm;
+      vertical-align: middle;
+      line-height: 1.35;
+    }
+    .title-block th {
+      background: #f3f3f3;
       font-weight: 600;
-      color: #000;
+      text-align: left;
+      width: 16%;
+      font-size: 7.5pt;
+      color: #333;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
     }
-
-    .schriftfeld .val-lg {
-      font-size: 12pt;
-      font-weight: 700;
-      color: #000;
-    }
-
-    .schriftfeld .val-md {
-      font-size: 9pt;
-      font-weight: 600;
-      color: #000;
-    }
-
-    .schriftfeld .org-cell {
+    .title-block .tb-logo {
       text-align: center;
-      font-size: 9pt;
-      font-weight: 700;
-      color: #000;
+      font-weight: 800;
+      font-size: 13pt;
+      color: #1a6aab;
       letter-spacing: 0.08em;
+      vertical-align: middle;
+      border-left: 1.2pt solid #000;
+    }
+    .title-block .tb-project {
+      font-size: 15pt;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+    .title-block .tb-doctype {
+      font-size: 10pt;
+      font-weight: 600;
+    }
+    .title-block .tb-norm {
+      font-size: 7pt;
+      color: #555;
+      font-weight: 400;
+    }
+    .title-block .tb-small {
+      font-size: 7pt;
+      color: #444;
     }
 
-    /* ================================================================
-       Parts List (Stueckliste) – DIN 6771-2
-       ================================================================ */
+    /* ============================================================
+       DIN EN 62027 BOM Table (Stückliste)
+       ============================================================ */
+    .bom-section-title {
+      font-size: 10pt;
+      font-weight: 700;
+      margin: 3mm 0 1.5mm 0;
+      padding-bottom: 1mm;
+      border-bottom: 0.8pt solid #000;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
     .bom-table {
       width: 100%;
       border-collapse: collapse;
+      border: 1.2pt solid #000;
       font-size: 8pt;
-      border: 0.7mm solid #000;
+      page-break-inside: auto;
+    }
+    .bom-table thead { display: table-header-group; }
+    .bom-table thead th {
+      background: #1a6aab;
+      color: #fff;
+      font-weight: 600;
+      padding: 2mm 2mm;
+      text-align: left;
+      border: 0.6pt solid #000;
+      white-space: nowrap;
+      font-size: 7.5pt;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .bom-table tbody td {
+      padding: 1.4mm 2mm;
+      border: 0.4pt solid #bbb;
+      border-left: 0.4pt solid #999;
+      border-right: 0.4pt solid #999;
+      vertical-align: top;
+      line-height: 1.3;
+    }
+    .bom-table tbody tr:nth-child(even):not(.category-row) { background: #f6f8fb; }
+    .bom-table tbody tr:hover:not(.category-row) { background: #e3edf7; }
+    .bom-table .center { text-align: center; }
+    .bom-table .mono { font-family: 'Consolas', 'Liberation Mono', 'Courier New', monospace; font-size: 7.5pt; }
+
+    /* Column widths conforming to DIN EN 62027 field priority */
+    .bom-table .col-pos  { width: 6%; text-align: center; }
+    .bom-table .col-qty  { width: 6%; text-align: center; }
+    .bom-table .col-unit { width: 5%; text-align: center; }
+    .bom-table .col-ref  { width: 12%; }
+    .bom-table .col-desc { width: 22%; }
+    .bom-table .col-val  { width: 12%; }
+    .bom-table .col-fp   { width: 11%; }
+    .bom-table .col-mfr  { width: 13%; }
+    .bom-table .col-pn   { width: 13%; }
+
+    /* Category group header */
+    .category-row td {
+      background: #e8ecf0 !important;
+      font-weight: 700;
+      font-size: 7.5pt;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 1.8mm 2.5mm !important;
+      border-top: 0.8pt solid #000;
+      border-bottom: 0.4pt solid #888;
+      color: #1a6aab;
     }
 
-    .bom-table th,
-    .bom-table td {
-      border: 0.35mm solid #000;
+    /* Summary / Totals */
+    .bom-table tfoot td {
+      padding: 2mm 2.5mm;
+      border: 1.2pt solid #000;
+      font-weight: 700;
+      background: #f3f3f3;
+      font-size: 8.5pt;
+    }
+
+    /* ============================================================
+       Approval / Revision Block (after table)
+       ============================================================ */
+    .approval-block {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1.2pt solid #000;
+      margin-top: 5mm;
+      font-size: 7.5pt;
+      page-break-inside: avoid;
+    }
+    .approval-block td, .approval-block th {
+      border: 0.6pt solid #000;
       padding: 1.5mm 2.5mm;
       vertical-align: middle;
     }
-
-    .bom-table thead th {
-      background: #e8e8e8;
-      color: #000;
-      font-weight: 700;
-      font-size: 7pt;
+    .approval-block th {
+      background: #f3f3f3;
+      font-weight: 600;
+      text-align: left;
       text-transform: uppercase;
+      font-size: 7pt;
+      color: #333;
       letter-spacing: 0.04em;
-      text-align: center;
-      padding: 2mm 2mm;
+      width: 16%;
+    }
+    .approval-block .sign-cell {
+      height: 10mm;
+      min-width: 30mm;
     }
 
-    .bom-table thead {
-      border-bottom: 0.7mm solid #000;
+    /* ============================================================
+       Norm Reference Footer
+       ============================================================ */
+    .norm-footer {
+      margin-top: 4mm;
+      font-size: 6.5pt;
+      color: #888;
+      border-top: 0.4pt solid #ccc;
+      padding-top: 1.5mm;
+      display: flex;
+      justify-content: space-between;
+    }
+    .norm-footer span { display: inline-block; }
+
+    /* ============================================================
+       Page Footer (fixed on print)
+       ============================================================ */
+    .page-footer {
+      position: absolute;
+      bottom: 8mm;
+      left: 12mm;
+      right: 12mm;
+      display: flex;
+      justify-content: space-between;
+      font-size: 6.5pt;
+      color: #777;
+      border-top: 0.4pt solid #bbb;
+      padding-top: 1.5mm;
     }
 
-    .bom-table tbody td {
-      font-size: 8pt;
-    }
-
-    .bom-table .c { text-align: center; }
-
-    .bom-table .col-pos  { width: 7%; }
-    .bom-table .col-qty  { width: 7%; }
-    .bom-table .col-ref  { width: 13%; }
-    .bom-table .col-val  { width: 15%; }
-    .bom-table .col-desc { width: 30%; }
-    .bom-table .col-fp   { width: 15%; }
-    .bom-table .col-rem  { width: 13%; }
-
-    .bom-table tfoot td {
-      border-top: 0.7mm solid #000;
-      font-weight: 700;
-      font-size: 8pt;
-      padding: 2mm 2.5mm;
-    }
-
-    /* ---- Print ---- */
+    /* ============================================================
+       Print Styles
+       ============================================================ */
     @media print {
-      html, body {
-        background: none !important;
-        padding: 0 !important;
-        margin: 0 !important;
-        width: 210mm;
-        height: 297mm;
-      }
-      .sheet {
-        width: 210mm;
-        min-height: 297mm;
-        margin: 0;
+      html { font-size: 9pt; }
+      body { background: none; padding: 0; margin: 0; }
+      .page {
         box-shadow: none;
-      }
-      .frame {
-        min-height: calc(297mm - 10mm - 10mm - 1.4mm);
-      }
-      /* Ensure backgrounds print */
-      .bom-table thead th {
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
-      }
-      @page {
-        size: 210mm 297mm;
+        border: none;
+        padding: 8mm 12mm 14mm 12mm;
         margin: 0;
+        width: 100%;
+        min-height: auto;
+      }
+      .bom-table tbody tr:hover { background: inherit; }
+      .bom-table tbody tr:nth-child(even):not(.category-row) { background: #f6f8fb; }
+      .bom-table thead { display: table-header-group; }
+      .bom-table tr { page-break-inside: avoid; }
+      .page-footer { position: fixed; bottom: 4mm; left: 12mm; right: 12mm; }
+      .norm-footer { page-break-before: avoid; }
+
+      @page {
+        size: A4 landscape;
+        margin: 8mm 10mm;
       }
     }
   </style>
 </head>
 <body>
-  <div class="sheet">
-    <div class="frame">
+  <div class="page">
+    <!-- ============================================================
+         DIN EN ISO 7200 — Schriftfeld (Title Block)
+         ============================================================ -->
+    <table class="title-block">
+      <colgroup>
+        <col style="width:16%">
+        <col style="width:22%">
+        <col style="width:10%">
+        <col style="width:20%">
+        <col style="width:16%">
+        <col style="width:16%">
+      </colgroup>
+      <tr>
+        <th>Projekt</th>
+        <td colspan="3" class="tb-project">${esc(projName)}</td>
+        <td rowspan="4" colspan="2" class="tb-logo">
+          <div style="margin-bottom:2mm;">LochCAD</div>
+          <div style="font-size:7pt;font-weight:400;color:#555;letter-spacing:0;">EDA \u00b7 Schaltplanentwurf</div>
+        </td>
+      </tr>
+      <tr>
+        <th>Dokumenttyp</th>
+        <td class="tb-doctype" colspan="2">St\u00fcckliste (BOM)</td>
+        <td class="tb-norm">nach DIN EN 62027 / IEC 62027</td>
+      </tr>
+      <tr>
+        <th>Beschreibung</th>
+        <td colspan="3">${esc(projDesc)}</td>
+      </tr>
+      <tr>
+        <th>Klassifikation</th>
+        <td colspan="3">${esc(classification)}</td>
+      </tr>
+      <tr>
+        <th>Dokument-Nr.</th>
+        <td class="mono" style="font-family:monospace;letter-spacing:0.05em;">${esc(docNumber)}</td>
+        <th style="width:10%">Revision</th>
+        <td><strong>${esc(revision)}</strong></td>
+        <th>Bl\u00e4tter</th>
+        <td class="center">${sheetCount}</td>
+      </tr>
+      <tr>
+        <th>Erstellt von</th>
+        <td>${esc(projAuthor)}</td>
+        <th>Erstellt am</th>
+        <td>${esc(projCreated)}</td>
+        <th>Druckdatum</th>
+        <td>${dateStr}</td>
+      </tr>
+      <tr>
+        <th>Abteilung</th>
+        <td>${esc(department)}</td>
+        <th>Positionen</th>
+        <td class="center"><strong>${totalPositions}</strong></td>
+        <th>Bauteile</th>
+        <td class="center"><strong>${totalParts}</strong></td>
+      </tr>
+    </table>
 
-      <!-- Parts list content area -->
-      <div class="content">
-        <table class="bom-table">
-          <thead>
-            <tr>
-              <th class="col-pos">Pos.</th>
-              <th class="col-qty">Menge</th>
-              <th class="col-ref">Referenz</th>
-              <th class="col-val">Benennung</th>
-              <th class="col-desc">Beschreibung</th>
-              <th class="col-fp">Bauform</th>
-              <th class="col-rem">Bemerkung</th>
-            </tr>
-          </thead>
-          <tbody>${rows}
-          </tbody>
-          <tfoot>
-            <tr>
-              <td colspan="6" style="text-align:right;">Gesamtanzahl Bauteile</td>
-              <td class="c">${totalParts}</td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
+    <!-- ============================================================
+         DIN EN 62027 — Stückliste (Parts List)
+         ============================================================ -->
+    <div class="bom-section-title">St\u00fcckliste / Teile\u00fcbersicht</div>
+    <table class="bom-table">
+      <thead>
+        <tr>
+          <th class="col-pos">Pos.</th>
+          <th class="col-qty">Menge</th>
+          <th class="col-unit">Einh.</th>
+          <th class="col-ref">Referenz</th>
+          <th class="col-desc">Benennung</th>
+          <th class="col-val">Wert</th>
+          <th class="col-fp">Bauform</th>
+          <th class="col-mfr">Hersteller</th>
+          <th class="col-pn">Bestell-Nr.</th>
+        </tr>
+      </thead>
+      <tbody>${rows}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="1" class="center">${totalPositions}</td>
+          <td colspan="1" class="center">${totalParts}</td>
+          <td colspan="7" style="text-align:left;">Gesamtanzahl: ${totalPositions} Positionen, ${totalParts} Bauteile</td>
+        </tr>
+      </tfoot>
+    </table>
 
-      <!-- Schriftfeld (Title Block) – DIN EN ISO 7200 -->
-      <table class="schriftfeld">
-        <tr class="sf-top">
-          <td rowspan="4" style="width:22%;" class="org-cell">LochCAD</td>
-          <td style="width:13%;"><span class="label">Verantwortl. Abt.</span><span class="val">Entwicklung</span></td>
-          <td colspan="3" style="width:43%;"><span class="label">Benennung</span><span class="val-lg">${projName}</span></td>
-          <td rowspan="2" style="width:22%;"><span class="label">Dokumentenart</span><span class="val-md">Stueckliste</span></td>
-        </tr>
-        <tr>
-          <td><span class="label">Erstellt von</span><span class="val">${projAuthor}</span></td>
-          <td colspan="3"><span class="label">Beschreibung</span><span class="val">${projDesc}</span></td>
-        </tr>
-        <tr>
-          <td><span class="label">Erstellt am</span><span class="val">${projCreated}</span></td>
-          <td><span class="label">Druckdatum</span><span class="val">${dateStr}</span></td>
-          <td><span class="label">Version</span><span class="val">${projVersion}</span></td>
-          <td><span class="label">Positionen</span><span class="val">${totalPositions}</span></td>
-          <td><span class="label">Blatt</span><span class="val">1 / ${sheetCount}</span></td>
-        </tr>
-        <tr>
-          <td colspan="5" style="font-size:6pt; color:#777;">Stueckliste nach DIN EN 82045 / DIN 6771-2&emsp;|&emsp;Schriftfeld nach DIN EN ISO 7200</td>
-        </tr>
-      </table>
+    <!-- ============================================================
+         Approval / Signature Block
+         ============================================================ -->
+    <table class="approval-block">
+      <tr>
+        <th>Bearbeitet</th>
+        <td>${esc(projAuthor)}</td>
+        <th>Datum</th>
+        <td>${esc(projCreated)}</td>
+        <th>Unterschrift</th>
+        <td class="sign-cell"></td>
+      </tr>
+      <tr>
+        <th>Gepr\u00fcft</th>
+        <td>${esc(approvedBy)}</td>
+        <th>Datum</th>
+        <td></td>
+        <th>Unterschrift</th>
+        <td class="sign-cell"></td>
+      </tr>
+      <tr>
+        <th>Freigegeben</th>
+        <td></td>
+        <th>Datum</th>
+        <td></td>
+        <th>Unterschrift</th>
+        <td class="sign-cell"></td>
+      </tr>
+    </table>
 
+    <!-- Norm reference -->
+    <div class="norm-footer">
+      <span>Erstellt gem\u00e4\u00df DIN EN 62027:2012 (IEC 62027:2011) \u2014 Listenerstellung</span>
+      <span>Schriftfeld nach DIN EN ISO 7200</span>
+      <span>${esc(docNumber)} Rev.\u00a0${esc(revision)}</span>
+    </div>
+
+    <!-- Page Footer -->
+    <div class="page-footer">
+      <span>St\u00fcckliste \u2014 ${esc(projName)} \u2014 ${dateStr}</span>
+      <span>${esc(docNumber)}</span>
+      <span>Erstellt mit LochCAD</span>
     </div>
   </div>
 </body>
 </html>`;
+}
+
+/** Escape HTML special characters */
+function esc(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }

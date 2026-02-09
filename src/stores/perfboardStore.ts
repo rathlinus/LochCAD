@@ -23,6 +23,7 @@ import { autoLayout } from '@/lib/engine/auto-layout';
 import type { AutoLayoutMode } from '@/lib/engine/auto-layout';
 import { autoRoute } from '@/lib/engine/autorouter';
 import { useToastStore } from './toastStore';
+import { copyPerfboardSelection, pastePerfboardClipboard, getClipboard } from '@/lib/clipboard';
 
 interface PerfboardState {
   activeTool: PerfboardToolType;
@@ -79,6 +80,14 @@ interface PerfboardState {
   undo: () => void;
   redo: () => void;
   pushSnapshot: () => void;
+
+  // Clipboard
+  copySelection: () => void;
+  cutSelection: () => void;
+  pasteSelection: () => void;
+
+  // Smart zoom
+  zoomToFit: (containerW?: number, containerH?: number) => void;
 
   // Helpers
   snapToGrid: (x: number, y: number) => GridPosition;
@@ -627,6 +636,84 @@ export const usePerfboardStore = create<PerfboardState>()(
       _pbUndoStack.push(getPBSnapshot());
       const snap = _pbRedoStack.pop()!;
       restorePBSnapshot(snap);
+    },
+
+    // ---- Clipboard ----
+    copySelection: () => {
+      const perfboard = useProjectStore.getState().project.perfboard;
+      const ids = get().selectedIds;
+      if (ids.length === 0) {
+        useToastStore.getState().showToast('Nichts zum Kopieren ausgewählt', 'warning');
+        return;
+      }
+      const comps = perfboard.components.filter((c) => ids.includes(c.id));
+      const conns = perfboard.connections.filter((c) => ids.includes(c.id));
+      const cuts = perfboard.trackCuts.filter((t) => ids.includes(t.id));
+      copyPerfboardSelection(comps, conns, cuts);
+      const total = comps.length + conns.length + cuts.length;
+      useToastStore.getState().showToast(`${total} Element(e) kopiert`, 'success');
+    },
+
+    cutSelection: () => {
+      get().copySelection();
+      if (getClipboard()) {
+        get().deleteSelected();
+      }
+    },
+
+    pasteSelection: () => {
+      const clip = getClipboard();
+      if (!clip || clip.type !== 'perfboard') {
+        useToastStore.getState().showToast('Zwischenablage leer', 'warning');
+        return;
+      }
+      const existingRefs = [
+        ...useProjectStore.getState().project.schematic.components.map((c) => c.reference),
+        ...useProjectStore.getState().project.perfboard.components.map((c) => c.reference),
+      ];
+      const pasted = pastePerfboardClipboard(existingRefs);
+      if (!pasted) return;
+
+      get().pushSnapshot();
+      mutatePerfboard((p) => {
+        p.components.push(...pasted.components);
+        p.connections.push(...pasted.connections);
+        p.trackCuts.push(...pasted.trackCuts);
+      });
+
+      // Select the pasted elements
+      const pastedIds = [
+        ...pasted.components.map((c) => c.id),
+        ...pasted.connections.map((c) => c.id),
+        ...pasted.trackCuts.map((t) => t.id),
+      ];
+      set((state) => { state.selectedIds = pastedIds; });
+      const total = pastedIds.length;
+      useToastStore.getState().showToast(`${total} Element(e) eingefügt`, 'success');
+    },
+
+    // ---- Smart Zoom-to-Fit ----
+    zoomToFit: (containerW = 800, containerH = 600) => {
+      const perfboard = useProjectStore.getState().project.perfboard;
+      // Board bounds in pixels
+      const boardW = (perfboard.width + 1) * PERFBOARD_GRID;
+      const boardH = (perfboard.height + 1) * PERFBOARD_GRID;
+
+      const margin = PERFBOARD_GRID * 2;
+      const totalW = boardW + margin * 2;
+      const totalH = boardH + margin * 2;
+
+      const scaleX = containerW / totalW;
+      const scaleY = containerH / totalH;
+      const scale = Math.min(scaleX, scaleY, 3);
+
+      set((state) => {
+        state.viewport = {
+          scale,
+          x: containerW / 2 - (boardW / 2) * scale,
+          y: containerH / 2 - (boardH / 2) * scale,
+        };
+      });
     },
 
     snapToGrid: (x, y) => ({

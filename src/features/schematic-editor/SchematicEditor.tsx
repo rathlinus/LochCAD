@@ -15,6 +15,18 @@ import { useHotkeys } from 'react-hotkeys-hook';
 import { routeSchematicWire, getComponentBBox, bboxOverlap, hasComponentCollision, getComponentPinSegments, buildOccupiedEdges, findSameNetWireIds, buildRoutingContext, buildOtherNetPinCells } from '@/lib/engine/schematic-router';
 import type { BBox } from '@/lib/engine/schematic-router';
 
+
+/** Distance from a point to a line segment (for wire reshape hit detection) */
+function pointToSegmentDist(p: Point, a: Point, b: Point): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
 export default function SchematicEditor() {
   const stageRef = useRef<Konva.Stage | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -44,9 +56,15 @@ export default function SchematicEditor() {
   const isDrawing = useSchematicStore((s) => s.isDrawing);
   const drawingPoints = useSchematicStore((s) => s.drawingPoints);
   const placingComponentId = useSchematicStore((s) => s.placingComponentId);
+  const highlightedNetPoints = useSchematicStore((s) => s.highlightedNetPoints);
   const activeSheetId = useProjectStore((s) => s.activeSheetId);
   const schematic = useProjectStore((s) => s.project.schematic);
   const customComponents = useProjectStore((s) => s.project.componentLibrary);
+
+  // Wire reshaping state
+  const [reshapingWireId, setReshapingWireId] = useState<string | null>(null);
+  const [reshapeSegIdx, setReshapeSegIdx] = useState<number>(-1);
+  const reshapeDragRef = useRef(false);
 
   const allComponents = useMemo(
     () => [...getBuiltInComponents(), ...customComponents],
@@ -322,6 +340,7 @@ export default function SchematicEditor() {
       // Nothing clicked on canvas background → deselect (only without shift)
       if (!e.evt.shiftKey && (e.target === stageRef.current || e.target.getParent() === stageRef.current?.findOne('.grid-layer'))) {
         useSchematicStore.getState().clearSelection();
+        useSchematicStore.getState().clearNetHighlight();
       }
     }
   }, [activeTool, placingComponentId, allComponents, snap, snapWithPins, getPointerPos, isDrawing, activeSheetId, schematic.components, placementCollision, placementRotation, placementMirror]);
@@ -349,6 +368,8 @@ export default function SchematicEditor() {
   const handleComponentClick = useCallback((compId: string, e: any) => {
     if (activeTool === 'select') {
       e.cancelBubble = true;
+      // Clear net highlight when clicking a component directly
+      useSchematicStore.getState().clearNetHighlight();
       if (e.evt.shiftKey) {
         useSchematicStore.getState().toggleSelection('componentIds', compId);
       } else {
@@ -387,6 +408,8 @@ export default function SchematicEditor() {
 
   const handleComponentDragStart = useCallback((compId: string) => {
     isDraggingComponentRef.current = true;
+    // Clear net highlight so it doesn't interfere with drag
+    useSchematicStore.getState().clearNetHighlight();
     const sel = useSchematicStore.getState().selection.componentIds;
     if (sel.length > 1 && sel.includes(compId)) {
       const comp = useProjectStore.getState().project.schematic.components.find((c) => c.id === compId);
@@ -450,16 +473,90 @@ export default function SchematicEditor() {
     }
   }, [selectionBox, sheetComponents]);
 
+  // Net highlight helper: given a wire, find all wires on the same net
+  const highlightNetFromWire = useCallback((wireId: string) => {
+    const wire = sheetWires.find((w) => w.id === wireId);
+    if (!wire || wire.points.length < 2) {
+      useSchematicStore.getState().clearNetHighlight();
+      return;
+    }
+    // Find which net contains any point of this wire
+    const EPS = 2;
+    const wireStart = wire.points[0];
+    const wireEnd = wire.points[wire.points.length - 1];
+
+    // Collect all wire IDs that share endpoints via transitive connection
+    const sameNetIds = findSameNetWireIds([wireStart, wireEnd], sheetWires);
+
+    // Collect all highlighted wire IDs and select them
+    const highlightIds = Array.from(sameNetIds);
+    useSchematicStore.getState().select({ wireIds: highlightIds });
+
+    // Collect all wire endpoints for visual net highlight
+    const allPts: Point[] = [];
+    for (const wId of highlightIds) {
+      const w = sheetWires.find((sw) => sw.id === wId);
+      if (w) {
+        allPts.push(w.points[0]);
+        allPts.push(w.points[w.points.length - 1]);
+      }
+    }
+
+    // Store full highlight — keep components out of selection
+    // so dragging one component doesn't move the whole net
+    useSchematicStore.getState().highlightNet(allPts);
+    useSchematicStore.getState().select({ wireIds: highlightIds });
+  }, [sheetWires, sheetComponents, allComponents, schematic]);
+
   const handleWireClick = useCallback((wireId: string, e: any) => {
     if (activeTool === 'select') {
       e.cancelBubble = true;
-      useSchematicStore.getState().select({ wireIds: [wireId] });
+      // Always highlight the full net when clicking a wire
+      highlightNetFromWire(wireId);
     } else if (activeTool === 'delete') {
       e.cancelBubble = true;
       useSchematicStore.getState().deleteWire(wireId);
     }
     // For draw_wire: let click bubble to stage so drawing starts/adds points
-  }, [activeTool]);
+  }, [activeTool, highlightNetFromWire]);
+
+  // Wire reshape: double-click on wire to add a waypoint
+  const handleWireDblClick = useCallback((wireId: string, e: any) => {
+    if (activeTool !== 'select') return;
+    e.cancelBubble = true;
+    const pos = getPointerPos();
+    if (!pos) return;
+    const snapped = snap(pos);
+
+    const wire = sheetWires.find((w) => w.id === wireId);
+    if (!wire || wire.points.length < 2) return;
+
+    // Find which segment the click is closest to and insert the waypoint
+    let bestIdx = 0;
+    let bestDist = Infinity;
+    for (let i = 0; i < wire.points.length - 1; i++) {
+      const a = wire.points[i];
+      const b = wire.points[i + 1];
+      const dist = pointToSegmentDist(snapped, a, b);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = i + 1;
+      }
+    }
+
+    if (bestDist < 20) {
+      useSchematicStore.getState().pushSnapshot();
+      // Insert waypoint into wire
+      useProjectStore.setState((state) => {
+        const w = state.project.schematic.wires.find((w) => w.id === wireId);
+        if (w) {
+          w.points.splice(bestIdx, 0, snapped);
+        }
+        state.project.updatedAt = new Date().toISOString();
+        state.isDirty = true;
+      });
+    }
+  }, [activeTool, sheetWires, getPointerPos, snap]);
 
   // Keyboard shortcuts
   useHotkeys('escape', () => {
@@ -503,6 +600,18 @@ export default function SchematicEditor() {
       sel.componentIds.forEach((id) => useSchematicStore.getState().rotateComponent(id));
     }
   }, { preventDefault: true, enableOnFormTags: true });
+
+  // Clipboard shortcuts
+  useHotkeys('ctrl+c', () => useSchematicStore.getState().copySelection(), { preventDefault: true });
+  useHotkeys('ctrl+x', () => useSchematicStore.getState().cutSelection(), { preventDefault: true });
+  useHotkeys('ctrl+v', () => useSchematicStore.getState().pasteSelection(), { preventDefault: true });
+  // Duplicate: Ctrl+D copies + immediately pastes
+  useHotkeys('ctrl+d', () => {
+    useSchematicStore.getState().copySelection();
+    useSchematicStore.getState().pasteSelection();
+  }, { preventDefault: true });
+  // Zoom to fit: Ctrl+0
+  useHotkeys('ctrl+0', () => useSchematicStore.getState().zoomToFit(), { preventDefault: true });
 
   // --- Commit label placement or edit ---
   const commitLabel = useCallback(() => {
@@ -570,12 +679,121 @@ export default function SchematicEditor() {
         {/* Wires Layer */}
         <Layer>
           {sheetWires.map((wire) => (
-            <WireRenderer
-              key={wire.id}
-              wire={wire}
-              isSelected={selection.wireIds.includes(wire.id)}
-              onClick={(e) => handleWireClick(wire.id, e)}
-            />
+            <React.Fragment key={wire.id}>
+              <WireRenderer
+                wire={wire}
+                isSelected={selection.wireIds.includes(wire.id)}
+                isNetHighlighted={highlightedNetPoints.length > 0 && selection.wireIds.includes(wire.id)}
+                onClick={(e) => handleWireClick(wire.id, e)}
+                onDblClick={(e) => handleWireDblClick(wire.id, e)}
+              />
+              {/* Wire waypoint drag handles for reshaping (route-aware) */}
+              {activeTool === 'select' && selection.wireIds.includes(wire.id) && wire.points.length > 2 &&
+                wire.points.slice(1, -1).map((pt, idx) => (
+                  <Circle
+                    key={`wp-${wire.id}-${idx}`}
+                    x={pt.x}
+                    y={pt.y}
+                    radius={4}
+                    fill={COLORS.selected}
+                    stroke="#fff"
+                    strokeWidth={1}
+                    draggable
+                    cursor="move"
+                    onDragStart={() => {
+                      reshapeDragRef.current = true;
+                      useSchematicStore.getState().pushSnapshot();
+                    }}
+                    onDragEnd={(e) => {
+                      reshapeDragRef.current = false;
+                      const targetPos = snap({ x: e.target.x(), y: e.target.y() });
+                      e.target.x(targetPos.x);
+                      e.target.y(targetPos.y);
+
+                      useProjectStore.setState((state) => {
+                        const w = state.project.schematic.wires.find((w) => w.id === wire.id);
+                        if (!w) return;
+
+                        const waypointIdx = idx + 1; // index in the full points array
+                        const prevPt = w.points[waypointIdx - 1];
+                        const nextPt = w.points[waypointIdx + 1];
+                        if (!prevPt || !nextPt) return;
+
+                        // Build replacement: prevPt → targetPos → nextPt with Manhattan L-route corners
+                        const replacement: Point[] = [prevPt];
+
+                        // Connect prevPt → targetPos
+                        if (Math.abs(prevPt.x - targetPos.x) > 0.5 && Math.abs(prevPt.y - targetPos.y) > 0.5) {
+                          // Not axis-aligned — insert L-route corner
+                          // Pick direction based on incoming segment orientation
+                          const prevPrev = w.points[waypointIdx - 2];
+                          if (prevPrev && Math.abs(prevPrev.y - prevPt.y) < 1) {
+                            // Incoming segment is horizontal → continue horizontal, then vertical
+                            replacement.push({ x: targetPos.x, y: prevPt.y });
+                          } else {
+                            // Incoming segment is vertical (or start point) → continue vertical, then horizontal
+                            replacement.push({ x: prevPt.x, y: targetPos.y });
+                          }
+                        }
+
+                        replacement.push(targetPos);
+
+                        // Connect targetPos → nextPt
+                        if (Math.abs(targetPos.x - nextPt.x) > 0.5 && Math.abs(targetPos.y - nextPt.y) > 0.5) {
+                          // Not axis-aligned — insert L-route corner
+                          const nextNext = w.points[waypointIdx + 2];
+                          if (nextNext && Math.abs(nextNext.x - nextPt.x) < 1) {
+                            // Outgoing segment is vertical → approach with horizontal-to-vertical corner
+                            replacement.push({ x: nextPt.x, y: targetPos.y });
+                          } else {
+                            // Outgoing segment is horizontal (or end point) → approach with vertical-to-horizontal corner
+                            replacement.push({ x: targetPos.x, y: nextPt.y });
+                          }
+                        }
+
+                        replacement.push(nextPt);
+
+                        // Splice into wire, replacing [prevPt, oldWaypoint, nextPt]
+                        const before = w.points.slice(0, waypointIdx - 1);
+                        const after = w.points.slice(waypointIdx + 2);
+                        let pts = [...before, ...replacement, ...after];
+
+                        // Clean up: remove consecutive duplicates
+                        const deduped: Point[] = [pts[0]];
+                        for (let i = 1; i < pts.length; i++) {
+                          if (Math.abs(pts[i].x - deduped[deduped.length - 1].x) > 0.5 ||
+                              Math.abs(pts[i].y - deduped[deduped.length - 1].y) > 0.5) {
+                            deduped.push(pts[i]);
+                          }
+                        }
+
+                        // Clean up: remove collinear middle points (3 points on same axis → drop middle)
+                        if (deduped.length >= 3) {
+                          const final: Point[] = [deduped[0]];
+                          for (let i = 1; i < deduped.length - 1; i++) {
+                            const a = final[final.length - 1];
+                            const b = deduped[i];
+                            const c = deduped[i + 1];
+                            const collinearX = Math.abs(a.x - b.x) < 0.5 && Math.abs(b.x - c.x) < 0.5;
+                            const collinearY = Math.abs(a.y - b.y) < 0.5 && Math.abs(b.y - c.y) < 0.5;
+                            if (!collinearX && !collinearY) {
+                              final.push(b);
+                            }
+                          }
+                          final.push(deduped[deduped.length - 1]);
+                          w.points = final;
+                        } else {
+                          w.points = deduped;
+                        }
+
+                        state.project.updatedAt = new Date().toISOString();
+                        state.isDirty = true;
+                      });
+                    }}
+                  />
+                ))
+              }
+            </React.Fragment>
           ))}
 
           {/* Drawing preview — Manhattan routed */}
@@ -804,13 +1022,29 @@ export default function SchematicEditor() {
           />
         </Layer>
 
+        {/* Net Highlight Overlay */}
+        {highlightedNetPoints.length > 0 && (
+          <Layer name="net-highlight" listening={false}>
+            {highlightedNetPoints.map((pt, i) => (
+              <Circle
+                key={`nh-${i}`}
+                x={pt.x}
+                y={pt.y}
+                radius={8}
+                fill="#ffaa00"
+                opacity={0.25}
+              />
+            ))}
+          </Layer>
+        )}
+
         {/* ERC Error Highlighting Overlay */}
         <ERCOverlayLayer />
       </Stage>
 
       {/* Tool hint overlay */}
       <div className="absolute bottom-2 left-2 text-[10px] text-lochcad-text-dim bg-lochcad-bg/80 px-2 py-1 rounded">
-        {activeTool === 'select' && 'Klick: Auswählen | Rechtsklick/Strg+R: Drehen | Scroll: Zoom'}
+        {activeTool === 'select' && 'Klick Draht: Netz markieren | Doppelklick Draht: Wegpunkt einfügen | Wegpunkt ziehen: Umverlegen | Strg+C/V/X: Kopieren/Einfügen'}
         {activeTool === 'draw_wire' && 'Klick: Punkt setzen (Manhattan) | Doppelklick: Beenden | Esc: Abbrechen'}
         {activeTool === 'place_component' && 'Klick: Platzieren | Rechtsklick/R/Strg+R: Drehen | X: Spiegeln | Esc: Abbrechen'}
         {activeTool === 'place_label' && 'Klick: Label platzieren — Name eingeben & Enter drücken'}
@@ -884,16 +1118,23 @@ GridRenderer.displayName = 'GridRenderer';
 
 // ---- Wire Renderer ----
 
-const WireRenderer: React.FC<{ wire: Wire; isSelected: boolean; onClick: (e: any) => void }> = React.memo(
-  ({ wire, isSelected, onClick }) => (
+const WireRenderer: React.FC<{
+  wire: Wire;
+  isSelected: boolean;
+  isNetHighlighted?: boolean;
+  onClick: (e: any) => void;
+  onDblClick?: (e: any) => void;
+}> = React.memo(
+  ({ wire, isSelected, isNetHighlighted, onClick, onDblClick }) => (
     <Line
       points={wire.points.flatMap((p) => [p.x, p.y])}
-      stroke={isSelected ? COLORS.selected : COLORS.wire}
-      strokeWidth={isSelected ? 3 : 2}
+      stroke={isNetHighlighted ? '#ffaa00' : isSelected ? COLORS.selected : COLORS.wire}
+      strokeWidth={isSelected || isNetHighlighted ? 3 : 2}
       lineCap="round"
       lineJoin="round"
       hitStrokeWidth={10}
       onClick={onClick}
+      onDblClick={onDblClick}
     />
   )
 );

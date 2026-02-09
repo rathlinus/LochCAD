@@ -2,7 +2,7 @@
 // Symbol Renderer — Draws component symbols on Konva canvas
 // ============================================================
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Group, Rect, Line, Circle, Arc, Text, Ellipse } from 'react-konva';
 import type { ComponentSymbol, SymbolGraphic, PinDefinition, Point } from '@/types';
 import { COLORS, PIN_TYPE_COLORS, SCHEMATIC_GRID } from '@/constants';
@@ -114,6 +114,8 @@ export const SymbolRenderer: React.FC<SymbolRendererProps> = React.memo(({
     }
   };
 
+  const bounds = useMemo(() => getSymbolBounds(symbol), [symbol]);
+
   return (
     <Group
       x={x}
@@ -128,24 +130,37 @@ export const SymbolRenderer: React.FC<SymbolRendererProps> = React.memo(({
       onDragMove={(e: any) => { e.cancelBubble = true; onDragMove?.(); }}
       onDragEnd={handleDragEnd}
     >
+      {/* Invisible hit-area covering the full bounding box so every
+          component is easy to click/drag regardless of shape geometry */}
+      <Rect
+        x={bounds.x}
+        y={bounds.y}
+        width={bounds.width}
+        height={bounds.height}
+        fill="transparent"
+        hitFunc={(context: any, shape: any) => {
+          context.beginPath();
+          context.rect(0, 0, shape.width(), shape.height());
+          context.closePath();
+          context.fillStrokeShape(shape);
+        }}
+      />
+
       {/* Selection highlight */}
-      {isSelected && (() => {
-        const bounds = getSymbolBounds(symbol);
-        return (
-          <Rect
-            x={bounds.x}
-            y={bounds.y}
-            width={bounds.width}
-            height={bounds.height}
-            fill={COLORS.selectedFill}
-            stroke={COLORS.selected}
-            strokeWidth={1}
-            dash={[4, 4]}
-            cornerRadius={4}
-            listening={false}
-          />
-        );
-      })()}
+      {isSelected && (
+        <Rect
+          x={bounds.x}
+          y={bounds.y}
+          width={bounds.width}
+          height={bounds.height}
+          fill={COLORS.selectedFill}
+          stroke={COLORS.selected}
+          strokeWidth={1}
+          dash={[4, 4]}
+          cornerRadius={4}
+          listening={false}
+        />
+      )}
 
       {/* Graphics */}
       {symbol.graphics.map((g, i) => (

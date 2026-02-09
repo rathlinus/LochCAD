@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useProjectStore, useSchematicStore, usePerfboardStore } from '@/stores';
 import { getBuiltInComponents, getAdjustedFootprint } from '@/lib/component-library';
 import type { ComponentDefinition, SchematicComponent, PerfboardComponent } from '@/types';
 import { BOARD_SIZE_PRESETS } from '@/constants';
-import { Settings, ChevronDown, ChevronRight } from 'lucide-react';
+import { Settings, ChevronDown, ChevronRight, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { validateComponentValue, formatValue, unitForCategory } from '@/lib/units';
 
 /** German labels for common property keys */
 const PROPERTY_LABELS: Record<string, string> = {
@@ -114,6 +115,60 @@ function PropertyInput({
   );
 }
 
+/** Value input with real-time validation and normalisation hint */
+function ValueInput({
+  comp,
+  libComp,
+  updateValue,
+}: {
+  comp: SchematicComponent;
+  libComp: ComponentDefinition | undefined;
+  updateValue: (id: string, value: string) => void;
+}) {
+  const category = libComp?.category ?? '';
+  const validation = useMemo(
+    () => validateComponentValue(comp.value, category),
+    [comp.value, category],
+  );
+
+  return (
+    <div className="space-y-1">
+      <label className="input-label">Wert</label>
+      <input
+        className={`input w-full ${
+          !validation.valid
+            ? 'border-red-500/60 focus:ring-red-500/40'
+            : validation.warning
+            ? 'border-yellow-500/60 focus:ring-yellow-500/40'
+            : ''
+        }`}
+        value={comp.value}
+        onChange={(e) => updateValue(comp.id, e.target.value)}
+      />
+      {/* Validation feedback */}
+      {validation.valid && validation.normalized && validation.normalized !== comp.value && (
+        <button
+          className="text-[10px] text-lochcad-accent hover:underline cursor-pointer flex items-center gap-1"
+          onClick={() => updateValue(comp.id, validation.normalized!)}
+          title="Klick zum Übernehmen"
+        >
+          <CheckCircle2 size={10} /> → {validation.normalized}
+        </button>
+      )}
+      {validation.warning && (
+        <div className="text-[10px] text-yellow-400 flex items-center gap-1">
+          <AlertTriangle size={10} /> {validation.warning}
+        </div>
+      )}
+      {!validation.valid && validation.error && (
+        <div className="text-[10px] text-red-400 flex items-center gap-1">
+          <AlertTriangle size={10} /> {validation.error}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Hole-span selector for 2-pin axial/radial components */
 function HoleSpanInput({
   comp,
@@ -190,15 +245,8 @@ function SchematicProperties() {
           />
         </div>
 
-        {/* Value */}
-        <div className="space-y-1">
-          <label className="input-label">Wert</label>
-          <input
-            className="input w-full"
-            value={comp.value}
-            onChange={(e) => updateComponentValue(comp.id, e.target.value)}
-          />
-        </div>
+        {/* Value with validation */}
+        <ValueInput comp={comp} libComp={libComp} updateValue={updateComponentValue} />
 
         {/* Divider */}
         {extraProps.length > 0 && (

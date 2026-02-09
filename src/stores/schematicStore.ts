@@ -24,6 +24,7 @@ import { routeSchematicWire, getComponentBBox, getComponentPinSegments, hasCompo
 import type { BBox } from '@/lib/engine/schematic-router';
 import { useToastStore } from './toastStore';
 import type { ComponentSymbol } from '@/types';
+import { copySchematicSelection, pasteSchematicClipboard, getClipboard } from '@/lib/clipboard';
 
 interface SchematicState {
   // Tool
@@ -93,6 +94,16 @@ interface SchematicState {
   // Delete selected
   deleteSelected: () => void;
 
+  // Clipboard
+  copySelection: () => void;
+  cutSelection: () => void;
+  pasteSelection: () => void;
+
+  // Net highlighting
+  highlightedNetPoints: Point[];
+  highlightNet: (points: Point[]) => void;
+  clearNetHighlight: () => void;
+
   // Snap
   snapToGrid: (point: Point) => Point;
 }
@@ -136,6 +147,7 @@ export function resetSchematicEditorState() {
     selection: { componentIds: [], wireIds: [], labelIds: [], junctionIds: [] },
     drawingPoints: [],
     isDrawing: false,
+    highlightedNetPoints: [],
   });
 }
 
@@ -595,6 +607,7 @@ export const useSchematicStore = create<SchematicState>()(
     selection: { componentIds: [], wireIds: [], labelIds: [], junctionIds: [] },
     drawingPoints: [],
     isDrawing: false,
+    highlightedNetPoints: [],
 
     setActiveTool: (tool) =>
       set((state) => {
@@ -615,10 +628,79 @@ export const useSchematicStore = create<SchematicState>()(
         Object.assign(state.viewport, vp);
       }),
 
-    zoomToFit: () =>
+    zoomToFit: () => {
+      const schematic = getSchematic();
+      const activeSheet = useProjectStore.getState().activeSheetId;
+      const allLib = [...getBuiltInComponents(), ...useProjectStore.getState().project.componentLibrary];
+      const sheetComps = schematic.components.filter((c) => c.sheetId === activeSheet);
+      const sheetWires = schematic.wires.filter((w) => w.sheetId === activeSheet);
+      const sheetLabels = schematic.labels.filter((l) => l.sheetId === activeSheet);
+
+      if (sheetComps.length === 0 && sheetWires.length === 0 && sheetLabels.length === 0) {
+        // Nothing on canvas — reset to defaults
+        set((state) => { state.viewport = { x: 0, y: 0, scale: 1 }; });
+        return;
+      }
+
+      // Compute bounding box from all content
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      const expand = (x: number, y: number) => {
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      };
+
+      for (const comp of sheetComps) {
+        const def = allLib.find((d) => d.id === comp.libraryId);
+        if (def) {
+          const bbox = getComponentBBox(comp, def.symbol);
+          expand(bbox.x, bbox.y);
+          expand(bbox.x + bbox.width, bbox.y + bbox.height);
+        } else {
+          expand(comp.position.x - 30, comp.position.y - 30);
+          expand(comp.position.x + 30, comp.position.y + 30);
+        }
+      }
+      for (const wire of sheetWires) {
+        for (const pt of wire.points) {
+          expand(pt.x, pt.y);
+        }
+      }
+      for (const label of sheetLabels) {
+        expand(label.position.x - 5, label.position.y - 15);
+        expand(label.position.x + 80, label.position.y + 10);
+      }
+
+      if (!isFinite(minX)) {
+        set((state) => { state.viewport = { x: 0, y: 0, scale: 1 }; });
+        return;
+      }
+
+      // Add margin (10% on each side)
+      const margin = 40;
+      minX -= margin; minY -= margin;
+      maxX += margin; maxY += margin;
+
+      const contentW = maxX - minX;
+      const contentH = maxY - minY;
+
+      // Use a reasonable container size estimate (800×600 default)
+      const containerW = 800;
+      const containerH = 600;
+
+      const scaleX = containerW / contentW;
+      const scaleY = containerH / contentH;
+      const scale = Math.min(scaleX, scaleY, 3); // cap at 3x zoom
+
       set((state) => {
-        state.viewport = { x: 0, y: 0, scale: 1 };
-      }),
+        state.viewport = {
+          scale,
+          x: containerW / 2 - (minX + contentW / 2) * scale,
+          y: containerH / 2 - (minY + contentH / 2) * scale,
+        };
+      });
+    },
 
     select: (ids) =>
       set((state) => {
@@ -1179,6 +1261,71 @@ export const useSchematicStore = create<SchematicState>()(
         state.selection = { componentIds: [], wireIds: [], labelIds: [], junctionIds: [] };
       });
     },
+
+    // ---- Clipboard ----
+    copySelection: () => {
+      const sel = get().selection;
+      const schematic = getSchematic();
+      const comps = schematic.components.filter((c) => sel.componentIds.includes(c.id));
+      const wires = schematic.wires.filter((w) => sel.wireIds.includes(w.id));
+      const junctions = schematic.junctions.filter((j) => sel.junctionIds.includes(j.id));
+      const labels = schematic.labels.filter((l) => sel.labelIds.includes(l.id));
+      if (comps.length === 0 && wires.length === 0 && labels.length === 0 && junctions.length === 0) {
+        useToastStore.getState().showToast('Nichts zum Kopieren ausgewählt', 'warning');
+        return;
+      }
+      copySchematicSelection(comps, wires, junctions, labels);
+      const total = comps.length + wires.length + labels.length + junctions.length;
+      useToastStore.getState().showToast(`${total} Element(e) kopiert`, 'success');
+    },
+
+    cutSelection: () => {
+      get().copySelection();
+      // Only cut if clipboard has data (copySelection succeeded)
+      if (getClipboard()) {
+        get().deleteSelected();
+      }
+    },
+
+    pasteSelection: () => {
+      const clip = getClipboard();
+      if (!clip || clip.type !== 'schematic') {
+        useToastStore.getState().showToast('Zwischenablage leer', 'warning');
+        return;
+      }
+      const sheetId = useProjectStore.getState().activeSheetId;
+      const existingRefs = [
+        ...getSchematic().components.map((c) => c.reference),
+        ...useProjectStore.getState().project.perfboard.components.map((c) => c.reference),
+      ];
+      const pasted = pasteSchematicClipboard(sheetId, existingRefs);
+      if (!pasted) return;
+
+      get().pushSnapshot();
+      mutateSchematic((s) => {
+        s.components.push(...pasted.components);
+        s.wires.push(...pasted.wires);
+        s.junctions.push(...pasted.junctions);
+        s.labels.push(...pasted.labels);
+      });
+
+      // Select the pasted elements
+      set((state) => {
+        state.selection = {
+          componentIds: pasted.components.map((c) => c.id),
+          wireIds: pasted.wires.map((w) => w.id),
+          labelIds: pasted.labels.map((l) => l.id),
+          junctionIds: pasted.junctions.map((j) => j.id),
+        };
+      });
+
+      const total = pasted.components.length + pasted.wires.length + pasted.labels.length + pasted.junctions.length;
+      useToastStore.getState().showToast(`${total} Element(e) eingefügt`, 'success');
+    },
+
+    // ---- Net Highlighting ----
+    highlightNet: (points) => set((state) => { state.highlightedNetPoints = points; }),
+    clearNetHighlight: () => set((state) => { state.highlightedNetPoints = []; }),
 
     snapToGrid: (point) => ({
       x: Math.round(point.x / SCHEMATIC_GRID) * SCHEMATIC_GRID,

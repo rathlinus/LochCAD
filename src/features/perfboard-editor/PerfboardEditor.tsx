@@ -619,6 +619,16 @@ export default function PerfboardEditor() {
     }
   }, { preventDefault: true, enableOnFormTags: true });
 
+  // Clipboard shortcuts
+  useHotkeys('ctrl+c', () => usePerfboardStore.getState().copySelection(), { preventDefault: true });
+  useHotkeys('ctrl+x', () => usePerfboardStore.getState().cutSelection(), { preventDefault: true });
+  useHotkeys('ctrl+v', () => usePerfboardStore.getState().pasteSelection(), { preventDefault: true });
+  useHotkeys('ctrl+d', () => {
+    usePerfboardStore.getState().copySelection();
+    usePerfboardStore.getState().pasteSelection();
+  }, { preventDefault: true });
+  useHotkeys('ctrl+0', () => usePerfboardStore.getState().zoomToFit(stageSize.width, stageSize.height), { preventDefault: true });
+
   // ---- Derived rendering data ----
 
   const boardPixelW = (perfboard.width + 1) * PERFBOARD_GRID;

@@ -269,9 +269,9 @@ export function TopBar() {
 
   const handleZoomFit = useCallback(() => {
     if (isSchematic) {
-      useSchematicStore.getState().setViewport({ scale: 1, x: 0, y: 0 });
+      useSchematicStore.getState().zoomToFit();
     } else if (isPerfboard) {
-      usePerfboardStore.getState().setViewport({ scale: 1, x: 0, y: 0 });
+      usePerfboardStore.getState().zoomToFit();
     }
   }, [isSchematic, isPerfboard]);
 
@@ -300,9 +300,9 @@ export function TopBar() {
       author: proj.author,
       version: proj.version,
       createdAt: proj.createdAt,
-      sheetCount: (proj.sheets?.length || 0) + 1,
+      sheetCount: proj.sheets?.length || 1,
     });
-    downloadTextFile(html, `${proj.name}_BOM.html`, 'text/html');
+    downloadTextFile(html, `${project.name}_BOM.html`, 'text/html');
     useToastStore.getState().showToast(`Stückliste (HTML) exportiert`, 'success');
   }, [project.name]);
 
