@@ -1,10 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useProjectStore, useSchematicStore, usePerfboardStore } from '@/stores';
 import { getBuiltInComponents, getAdjustedFootprint } from '@/lib/component-library';
 import type { ComponentDefinition, SchematicComponent, PerfboardComponent } from '@/types';
-import { BOARD_SIZE_PRESETS } from '@/constants';
+import { BOARD_SIZE_PRESETS, COLORS } from '@/constants';
 import { Settings, ChevronDown, ChevronRight, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { validateComponentValue, formatValue, unitForCategory } from '@/lib/units';
+import { buildNetlist } from '@/lib/engine/netlist';
 
 /** German labels for common property keys */
 const PROPERTY_LABELS: Record<string, string> = {
@@ -210,12 +211,16 @@ function HoleSpanInput({
 function SchematicProperties() {
   const selection = useSchematicStore((s) => s.selection);
   const schematic = useProjectStore((s) => s.project.schematic);
+  const netColors = useProjectStore((s) => s.project.netColors) ?? {};
   const { updateComponentValue, updateComponentRef, updateComponentProperty } = useSchematicStore();
 
   if (selection.componentIds.length === 0) {
     return (
-      <div className="p-3 text-xs text-lochcad-text-dim">
-        Wähle ein Bauteil aus, um seine Eigenschaften zu bearbeiten.
+      <div className="p-2 space-y-2">
+        <div className="text-xs text-lochcad-text-dim pb-1">
+          Wähle ein Bauteil aus, um seine Eigenschaften zu bearbeiten.
+        </div>
+        <NetColorManager />
       </div>
     );
   }
@@ -324,6 +329,261 @@ function SchematicProperties() {
   );
 }
 
+/** Swatch palette for the custom color picker */
+const COLOR_SWATCHES = [
+  // Row 1 — vivid
+  '#ff4444', '#ff8800', '#ffcc00', '#44cc44', '#00ff88', '#00cccc',
+  '#4488ff', '#aa44ff', '#ff66b2', '#ffffff', '#c0c0c0', '#888888',
+  // Row 2 — muted/dark
+  '#cc2222', '#cc6600', '#aa8800', '#228822', '#00aa66', '#008888',
+  '#2266cc', '#7722cc', '#cc4488', '#444444', '#222222', '#000000',
+];
+
+/** Default wire color (the standard green) */
+const DEFAULT_NET_COLOR = '#00ff88';
+
+/** Well-known net names mapped to a sensible default color */
+const KNOWN_NET_COLORS: Record<string, string> = {
+  VCC: '#ff4444', '+5V': '#ff4444', '+3.3V': '#ff6644', '+12V': '#ff8800',
+  GND: '#444444', CLK: '#aa44ff', SCL: '#4488ff', SDA: '#44cc44',
+};
+
+// ---- Inline Color Picker (dropdown) ----
+
+function ColorPickerPopup({
+  color,
+  onChange,
+  onClose,
+}: {
+  color: string;
+  onChange: (c: string) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [hex, setHex] = useState(color);
+
+  // Sync external color changes
+  useEffect(() => setHex(color), [color]);
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [onClose]);
+
+  const applyHex = () => {
+    const clean = hex.trim();
+    if (/^#[0-9a-fA-F]{6}$/.test(clean)) onChange(clean);
+    else if (/^[0-9a-fA-F]{6}$/.test(clean)) onChange('#' + clean);
+  };
+
+  return (
+    <div
+      ref={ref}
+      className="absolute left-0 top-full mt-1 z-50 bg-lochcad-surface border border-lochcad-panel/40 rounded-md shadow-lg p-1.5 w-[186px]"
+    >
+      {/* Swatch grid */}
+      <div className="grid grid-cols-6 gap-0.5 mb-1.5">
+        {COLOR_SWATCHES.map((c) => (
+          <button
+            key={c}
+            className={`w-6 h-6 rounded-sm border-2 transition-transform hover:scale-110 ${
+              color === c ? 'border-white scale-110' : 'border-transparent'
+            }`}
+            style={{ backgroundColor: c }}
+            onClick={() => { onChange(c); }}
+            title={c}
+          />
+        ))}
+      </div>
+      {/* Hex input */}
+      <div className="flex items-center gap-1">
+        <div
+          className="w-6 h-6 rounded-sm border border-white/20 flex-shrink-0"
+          style={{ backgroundColor: color }}
+        />
+        <input
+          className="input text-[10px] flex-1 font-mono px-1 py-0.5"
+          value={hex}
+          onChange={(e) => setHex(e.target.value)}
+          onBlur={applyHex}
+          onKeyDown={(e) => { if (e.key === 'Enter') { applyHex(); onClose(); } }}
+          spellCheck={false}
+          maxLength={7}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ---- Net Color Manager ----
+
+function NetColorManager() {
+  const schematic = useProjectStore((s) => s.project.schematic);
+  const netColors = useProjectStore((s) => s.project.netColors) ?? {};
+  const { setNetColor, removeNetColor } = useProjectStore();
+  const [expanded, setExpanded] = useState(true);
+  const [pickerOpen, setPickerOpen] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState<string | null>(null);
+  const [editedName, setEditedName] = useState('');
+
+  const { updateLabel } = useSchematicStore();
+
+  const closePicker = useCallback(() => setPickerOpen(null), []);
+
+  // Compute the netlist to discover all nets
+  const computedNetlist = useMemo(() => buildNetlist(schematic), [schematic]);
+
+  // All detected net names — labeled nets first, then auto-named
+  const allNets = useMemo(() => {
+    const labeled: string[] = [];
+    const auto: string[] = [];
+    for (const net of computedNetlist.nets) {
+      if (net.name.startsWith('Net_')) auto.push(net.name);
+      else labeled.push(net.name);
+    }
+    labeled.sort();
+    auto.sort((a, b) => {
+      const na = parseInt(a.replace('Net_', ''), 10);
+      const nb = parseInt(b.replace('Net_', ''), 10);
+      return na - nb;
+    });
+    return [...labeled, ...auto];
+  }, [computedNetlist]);
+
+  // Default color for a net
+  const defaultColor = (name: string) => KNOWN_NET_COLORS[name] || DEFAULT_NET_COLOR;
+
+  // Finish renaming a net — updates schematic labels + net color entry
+  const finishRename = (oldName: string) => {
+    const trimmed = editedName.trim();
+    if (trimmed && trimmed !== oldName) {
+      // Rename all schematic labels with the old name
+      const labels = schematic.labels.filter((l) => l.text === oldName);
+      for (const label of labels) {
+        updateLabel(label.id, { text: trimmed });
+      }
+      // Transfer net color to new name
+      const oldColor = netColors[oldName];
+      if (oldColor) {
+        removeNetColor(oldName);
+        setNetColor(trimmed, oldColor);
+      }
+    }
+    setEditingName(null);
+  };
+
+  const coloredCount = Object.keys(netColors).length;
+
+  return (
+    <div className="border-t border-lochcad-panel/30 pt-2">
+      <button
+        className="text-[10px] font-semibold text-lochcad-text-dim uppercase tracking-wider mb-1 flex items-center gap-1 w-full text-left"
+        onClick={() => setExpanded(!expanded)}
+      >
+        {expanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+        Netzliste
+        {coloredCount > 0 && (
+          <span className="ml-auto text-lochcad-accent font-normal normal-case">{coloredCount} eingefärbt</span>
+        )}
+      </button>
+
+      {expanded && (
+        <div className="space-y-0.5 max-h-64 overflow-y-auto">
+          {allNets.length === 0 ? (
+            <div className="text-[10px] text-lochcad-text-dim px-1 py-1">
+              Keine Netze erkannt. Verbinde Bauteile mit Leitungen.
+            </div>
+          ) : (
+            allNets.map((name) => {
+              const color = netColors[name];
+              const isColored = !!color;
+              return (
+                <div
+                  key={name}
+                  className={`flex items-center gap-1.5 px-1 py-0.5 rounded relative ${
+                    isColored ? 'bg-lochcad-panel/15' : 'hover:bg-lochcad-panel/10'
+                  } group`}
+                >
+                  {/* Color swatch — click to open picker or assign default color */}
+                  {isColored ? (
+                    <button
+                      className="w-4 h-4 rounded-sm flex-shrink-0 border border-white/20 hover:border-white transition-colors"
+                      style={{ backgroundColor: color }}
+                      onClick={() => setPickerOpen(pickerOpen === name ? null : name)}
+                      title="Farbe anpassen"
+                    />
+                  ) : (
+                    <button
+                      className="w-4 h-4 rounded-sm border border-dashed border-lochcad-text-dim/30 flex-shrink-0 hover:border-lochcad-accent transition-colors"
+                      style={{ backgroundColor: 'transparent' }}
+                      onClick={() => setNetColor(name, defaultColor(name))}
+                      title="Farbe zuweisen"
+                    />
+                  )}
+
+                  {/* Net name — double-click to rename */}
+                  {editingName === name ? (
+                    <input
+                      className="input text-[10px] flex-1 py-0 px-1 min-w-0"
+                      value={editedName}
+                      onChange={(e) => setEditedName(e.target.value)}
+                      onBlur={() => finishRename(name)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') finishRename(name);
+                        if (e.key === 'Escape') setEditingName(null);
+                      }}
+                      autoFocus
+                    />
+                  ) : (
+                    <span
+                      className={`text-[10px] flex-1 truncate select-none cursor-text ${
+                        isColored ? 'text-lochcad-text font-medium' : 'text-lochcad-text-dim'
+                      }`}
+                      style={isColored ? { color } : undefined}
+                      onDoubleClick={() => {
+                        setEditingName(name);
+                        setEditedName(name);
+                      }}
+                      title="Doppelklick zum Umbenennen"
+                    >
+                      {name}
+                    </span>
+                  )}
+
+                  {/* Remove button */}
+                  {isColored && (
+                    <button
+                      className="text-[10px] text-lochcad-error opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                      onClick={() => { removeNetColor(name); setPickerOpen(null); }}
+                      title="Farbe entfernen"
+                    >
+                      ✕
+                    </button>
+                  )}
+
+                  {/* Color picker popup */}
+                  {pickerOpen === name && isColored && (
+                    <ColorPickerPopup
+                      color={color}
+                      onChange={(c) => setNetColor(name, c)}
+                      onClose={closePicker}
+                    />
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function PerfboardProperties() {
   const perfboard = useProjectStore((s) => s.project.perfboard);
   const { setBoardConfig } = useProjectStore();
@@ -396,6 +656,8 @@ function PerfboardProperties() {
           </div>
         </div>
       )}
+
+      <NetColorManager />
     </div>
   );
 }

@@ -13,6 +13,7 @@ import type { Point, SchematicComponent, Wire, Junction, NetLabel } from '@/type
 import { v4 as uuid } from 'uuid';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { routeSchematicWire, getComponentBBox, bboxOverlap, hasComponentCollision, getComponentPinSegments, buildOccupiedEdges, findSameNetWireIds, buildRoutingContext, buildOtherNetPinCells } from '@/lib/engine/schematic-router';
+import { buildNetlist } from '@/lib/engine/netlist';
 import type { BBox } from '@/lib/engine/schematic-router';
 
 
@@ -60,6 +61,7 @@ export default function SchematicEditor() {
   const activeSheetId = useProjectStore((s) => s.activeSheetId);
   const schematic = useProjectStore((s) => s.project.schematic);
   const customComponents = useProjectStore((s) => s.project.componentLibrary);
+  const netColors = useProjectStore((s) => s.project.netColors);
 
   // Wire reshaping state
   const [reshapingWireId, setReshapingWireId] = useState<string | null>(null);
@@ -111,6 +113,55 @@ export default function SchematicEditor() {
     () => schematic.labels.filter((l) => l.sheetId === activeSheetId),
     [schematic.labels, activeSheetId]
   );
+
+  // Hierarchical sheet instances on the current sheet
+  const sheetInstances = useMemo(
+    () => schematic.hierarchicalSheetInstances.filter((h) => h.sheetId === activeSheetId),
+    [schematic.hierarchicalSheetInstances, activeSheetId]
+  );
+
+  // Compute the netlist from the schematic for net-name resolution
+  const computedNetlist = useMemo(() => buildNetlist(schematic), [schematic]);
+
+  // Build wire-id → color map using netlist + labels + transitive wire matching
+  const wireNetColorMap = useMemo<Map<string, string>>(() => {
+    const map = new Map<string, string>();
+    if (!netColors || Object.keys(netColors).length === 0) return map;
+
+    for (const [netName, color] of Object.entries(netColors)) {
+      const seedPoints: Point[] = [];
+
+      // Seed from labels with this net name on the active sheet
+      for (const label of sheetLabels) {
+        if (label.text === netName) seedPoints.push(label.position);
+      }
+
+      // Seed from netlist — find component pins belonging to this net
+      const net = computedNetlist.nets.find((n) => n.name === netName);
+      if (net) {
+        for (const conn of net.connections) {
+          const comp = sheetComponents.find((c) => c.id === conn.componentId);
+          if (!comp) continue;
+          const def = allComponents.find((d) => d.id === comp.libraryId);
+          if (!def) continue;
+          const pinIdx = def.symbol.pins.findIndex((p) => p.number === conn.pinNumber);
+          if (pinIdx < 0) continue;
+          const segs = getComponentPinSegments(comp, def.symbol);
+          if (segs[pinIdx]) seedPoints.push(segs[pinIdx].base);
+        }
+      }
+
+      if (seedPoints.length === 0) continue;
+
+      // Find all wires transitively connected to these seed points
+      const wireIds = findSameNetWireIds(seedPoints, sheetWires);
+      for (const id of wireIds) {
+        if (!map.has(id)) map.set(id, color);
+      }
+    }
+
+    return map;
+  }, [netColors, computedNetlist, sheetLabels, sheetWires, sheetComponents, allComponents]);
 
   // Routing obstacles (full bboxes) + pin corridor allowed cells
   const { sheetObstacles, sheetAllowedCells } = useMemo(() => {
@@ -684,6 +735,7 @@ export default function SchematicEditor() {
                 wire={wire}
                 isSelected={selection.wireIds.includes(wire.id)}
                 isNetHighlighted={highlightedNetPoints.length > 0 && selection.wireIds.includes(wire.id)}
+                netColor={wireNetColorMap.get(wire.id)}
                 onClick={(e) => handleWireClick(wire.id, e)}
                 onDblClick={(e) => handleWireDblClick(wire.id, e)}
               />
@@ -916,7 +968,7 @@ export default function SchematicEditor() {
                 width={label.text.length * 7 + 8}
                 height={16}
                 fill={COLORS.background}
-                stroke={label.type === 'power' ? '#ff4444' : COLORS.wire}
+                stroke={label.type === 'power' ? '#ff4444' : (netColors?.[label.text] || COLORS.wire)}
                 strokeWidth={1}
                 cornerRadius={2}
               />
@@ -926,10 +978,119 @@ export default function SchematicEditor() {
                 text={label.text}
                 fontSize={10}
                 fontFamily="JetBrains Mono, monospace"
-                fill={label.type === 'power' ? '#ff4444' : '#ffffff'}
+                fill={label.type === 'power' ? '#ff4444' : (netColors?.[label.text] || '#ffffff')}
               />
             </Group>
           ))}
+
+          {/* Hierarchical Sheet Instances */}
+          {sheetInstances.map((inst) => {
+            const targetSheet = schematic.sheets.find((s) => s.id === inst.targetSheetId);
+            const sheetName = targetSheet?.name ?? 'Sheet';
+            // Collect sheet pins that belong to the target sheet
+            const pins = schematic.sheetPins.filter((p) => p.sheetId === inst.targetSheetId);
+
+            return (
+              <Group
+                key={inst.id}
+                x={inst.position.x}
+                y={inst.position.y}
+                draggable={activeTool === 'select'}
+                onDragEnd={(e: any) => {
+                  const snapped = snap({ x: e.target.x(), y: e.target.y() });
+                  e.target.x(snapped.x);
+                  e.target.y(snapped.y);
+                  useProjectStore.setState((state) => {
+                    const h = state.project.schematic.hierarchicalSheetInstances.find(
+                      (hi) => hi.id === inst.id
+                    );
+                    if (h) {
+                      h.position = snapped;
+                    }
+                    state.isDirty = true;
+                  });
+                }}
+                onDblClick={(e: any) => {
+                  e.cancelBubble = true;
+                  useProjectStore.getState().navigateIntoSheet(inst.targetSheetId);
+                }}
+                onClick={(e: any) => {
+                  e.cancelBubble = true;
+                  if (activeTool === 'delete') {
+                    useProjectStore.getState().removeHierarchicalSheetInstance(inst.id);
+                  }
+                }}
+                cursor={activeTool === 'delete' ? 'pointer' : activeTool === 'select' ? 'pointer' : 'default'}
+              >
+                {/* Sheet instance box */}
+                <Rect
+                  width={inst.size.width}
+                  height={inst.size.height}
+                  fill="rgba(100, 140, 200, 0.08)"
+                  stroke="#6488c8"
+                  strokeWidth={2}
+                  cornerRadius={4}
+                />
+                {/* Sheet name header */}
+                <Rect
+                  width={inst.size.width}
+                  height={22}
+                  fill="rgba(100, 140, 200, 0.25)"
+                  cornerRadius={[4, 4, 0, 0]}
+                />
+                <Text
+                  x={6}
+                  y={4}
+                  text={sheetName}
+                  fontSize={12}
+                  fontFamily="Inter, sans-serif"
+                  fontStyle="bold"
+                  fill="#a0c0ff"
+                  width={inst.size.width - 12}
+                  ellipsis
+                  wrap="none"
+                />
+                {/* Navigation hint */}
+                <Text
+                  x={6}
+                  y={inst.size.height - 16}
+                  text="⏎ Doppelklick: Öffnen"
+                  fontSize={8}
+                  fontFamily="JetBrains Mono, monospace"
+                  fill="#6488c8"
+                  opacity={0.6}
+                />
+                {/* Sheet pins on the sides */}
+                {pins.map((pin, idx) => {
+                  const pinY = 30 + idx * 20;
+                  const isInput = pin.direction === 'input';
+                  const pinX = isInput ? 0 : inst.size.width;
+                  const textX = isInput ? 8 : inst.size.width - 8;
+                  const anchor = isInput ? 'start' : 'end';
+                  return (
+                    <React.Fragment key={pin.id}>
+                      <Circle
+                        x={pinX}
+                        y={pinY}
+                        radius={3}
+                        fill="#a0c0ff"
+                        stroke="#6488c8"
+                        strokeWidth={1}
+                      />
+                      <Text
+                        x={isInput ? textX : textX - pin.name.length * 6}
+                        y={pinY - 5}
+                        text={pin.name}
+                        fontSize={9}
+                        fontFamily="JetBrains Mono, monospace"
+                        fill="#a0c0ff"
+                      />
+                    </React.Fragment>
+                  );
+                })}
+              </Group>
+            );
+          })}
         </Layer>
 
         {/* Overlay Layer — cursor crosshair, placement preview */}
@@ -1122,13 +1283,14 @@ const WireRenderer: React.FC<{
   wire: Wire;
   isSelected: boolean;
   isNetHighlighted?: boolean;
+  netColor?: string;
   onClick: (e: any) => void;
   onDblClick?: (e: any) => void;
 }> = React.memo(
-  ({ wire, isSelected, isNetHighlighted, onClick, onDblClick }) => (
+  ({ wire, isSelected, isNetHighlighted, netColor, onClick, onDblClick }) => (
     <Line
       points={wire.points.flatMap((p) => [p.x, p.y])}
-      stroke={isNetHighlighted ? '#ffaa00' : isSelected ? COLORS.selected : COLORS.wire}
+      stroke={isNetHighlighted ? '#ffaa00' : isSelected ? COLORS.selected : netColor || COLORS.wire}
       strokeWidth={isSelected || isNetHighlighted ? 3 : 2}
       lineCap="round"
       lineJoin="round"

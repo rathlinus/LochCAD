@@ -40,6 +40,7 @@ export default function PerfboardEditor() {
   const perfboard = useProjectStore((s) => s.project.perfboard);
   const schematic = useProjectStore((s) => s.project.schematic);
   const customComponents = useProjectStore((s) => s.project.componentLibrary);
+  const netColors = useProjectStore((s) => s.project.netColors);
 
   const allLib = useMemo(
     () => [...getBuiltInComponents(), ...customComponents],
@@ -147,6 +148,68 @@ export default function PerfboardEditor() {
     const pads = libComp.footprint.pads.map((p) => p.gridPosition);
     return hasFootprintCollision(pads, mouseGridPos, placementRotation, compData, libComp.footprint.spanHoles);
   }, [activeTool, placingComponentId, allLib, mouseGridPos, placementRotation, compData]);
+
+  // Compute the netlist from the schematic for net-name resolution
+  const computedNetlist = useMemo(() => buildNetlist(schematic), [schematic]);
+
+  // Build connection-id → color map for net coloring
+  const connectionNetColorMap = useMemo<Map<string, string>>(() => {
+    const map = new Map<string, string>();
+    if (!netColors || Object.keys(netColors).length === 0) return map;
+    if (!computedNetlist.nets.length) return map;
+
+    // Build netId → net name map
+    const netNameById = new Map<string, string>();
+    for (const net of computedNetlist.nets) {
+      if (net.name && netColors[net.name]) {
+        netNameById.set(net.id, net.name);
+      }
+    }
+
+    // Build hole → net name map by mapping schematic component pins to perfboard pads
+    const holeToNetName = new Map<string, string>();
+    for (const net of computedNetlist.nets) {
+      if (!net.name || !netColors[net.name]) continue;
+      for (const conn of net.connections) {
+        // Find the perfboard component matching this schematic component
+        const pbComp = perfboard.components.find((c) => c.schematicComponentId === conn.componentId);
+        if (!pbComp) continue;
+        const libComp = allLib.find((l) => l.id === pbComp.libraryId);
+        if (!libComp) continue;
+        // Find the pad for this pin
+        const pad = libComp.footprint.pads.find((p) => p.pinNumber === conn.pinNumber);
+        if (!pad) continue;
+        // Rotate pad position
+        const r = ((pbComp.rotation % 360) + 360) % 360;
+        let pc = pad.gridPosition.col, pr = pad.gridPosition.row;
+        if (r === 90) { const t = pc; pc = -pr; pr = t; }
+        else if (r === 180) { pc = -pc; pr = -pr; }
+        else if (r === 270) { const t = pc; pc = pr; pr = -t; }
+        const holeKey = `${pbComp.gridPosition.col + pc},${pbComp.gridPosition.row + pr}`;
+        holeToNetName.set(holeKey, net.name);
+      }
+    }
+
+    // Map connections to colors
+    for (const conn of perfboard.connections) {
+      // Try explicit netId first
+      if (conn.netId) {
+        const netName = netNameById.get(conn.netId);
+        if (netName && netColors[netName]) {
+          map.set(conn.id, netColors[netName]);
+          continue;
+        }
+      }
+      // Fall back to hole-based matching
+      const fromKey = `${conn.from.col},${conn.from.row}`;
+      const toKey = `${conn.to.col},${conn.to.row}`;
+      const netName = holeToNetName.get(fromKey) || holeToNetName.get(toKey);
+      if (netName && netColors[netName]) {
+        map.set(conn.id, netColors[netName]);
+      }
+    }
+    return map;
+  }, [netColors, computedNetlist, perfboard.connections, perfboard.components, allLib]);
 
   // ---------- Ratsnest (dotted lines for unconnected schematic nets) ----------
   const ratsnestLines = useMemo(() => {
@@ -730,6 +793,7 @@ export default function PerfboardEditor() {
               connection={conn}
               gridToPixel={gridToPixel}
               isSelected={selectedIds.includes(conn.id)}
+              netColor={connectionNetColorMap.get(conn.id)}
               onClick={() => {
                 if (activeTool === 'select') usePerfboardStore.getState().select([conn.id]);
                 else if (activeTool === 'delete') usePerfboardStore.getState().removeConnection(conn.id);
@@ -1062,14 +1126,16 @@ const ConnectionRenderer: React.FC<{
   connection: PerfboardConnection;
   gridToPixel: (pos: GridPosition) => { x: number; y: number };
   isSelected: boolean;
+  netColor?: string;
   onClick: () => void;
-}> = React.memo(({ connection, gridToPixel, isSelected, onClick }) => {
+}> = React.memo(({ connection, gridToPixel, isSelected, netColor, onClick }) => {
   const from = gridToPixel(connection.from);
   const to = gridToPixel(connection.to);
 
   const isSolderBridge = connection.type === 'solder_bridge';
 
   const color = isSelected ? COLORS.selected
+    : netColor ? netColor
     : connection.type === 'wire' ? COLORS.copper
     : connection.type === 'wire_bridge' ? COLORS.wireBridge
     : isSolderBridge ? SOLDER_BRIDGE_COLOR

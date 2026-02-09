@@ -61,6 +61,7 @@ function createEmptyProject(name: string = 'Neues Projekt'): Project {
     sheets: [],
     componentLibrary: [],
     netlist: { nets: [] },
+    netColors: {},
   };
 }
 
@@ -83,6 +84,7 @@ function loadFromLocalStorage(): Project | null {
       if (!parsed.tags) parsed.tags = [];
       if (!parsed.notes) parsed.notes = [];
       if (!parsed.componentLibrary) parsed.componentLibrary = [];
+      if (!parsed.netColors) parsed.netColors = {};
       return parsed as Project;
     }
   } catch { /* ignore corrupt data */ }
@@ -117,6 +119,16 @@ interface ProjectState {
   markDirty: () => void;
   markClean: () => void;
 
+  // Net colors
+  setNetColor: (netName: string, color: string) => void;
+  removeNetColor: (netName: string) => void;
+
+  // Hierarchical sheets
+  addHierarchicalSheetInstance: (targetSheetId: string, position: { x: number; y: number }, size: { width: number; height: number }, parentSheetId: string) => string;
+  removeHierarchicalSheetInstance: (id: string) => void;
+  navigateIntoSheet: (targetSheetId: string) => void;
+  navigateUp: () => void;
+
   // Notes
   addNote: (title: string, content?: string) => string;
   updateNote: (noteId: string, updates: Partial<Pick<ProjectNote, 'title' | 'content'>>) => void;
@@ -138,7 +150,7 @@ const _restored = loadFromLocalStorage();
 export const useProjectStore = create<ProjectState>()(
   immer((set) => ({
     project: _restored ?? createEmptyProject(),
-    currentView: 'schematic',
+    currentView: 'schematic' as EditorView,
     activeSheetId: _restored?.schematic?.sheets?.[0]?.id ?? 'main-sheet',
     isDirty: false,    editingComponentId: null,
     setProject: (project) =>
@@ -148,6 +160,7 @@ export const useProjectStore = create<ProjectState>()(
         if (!project.author) project.author = '';
         if (!project.tags) project.tags = [];
         if (!project.notes) project.notes = [];
+        if (!project.netColors) project.netColors = {};
         state.project = project;
         state.activeSheetId = project.schematic.sheets[0]?.id ?? 'main-sheet';
         state.currentView = 'schematic';
@@ -290,8 +303,65 @@ export const useProjectStore = create<ProjectState>()(
     markDirty: () => set((state) => { state.isDirty = true; }),
     markClean: () => set((state) => { state.isDirty = false; }),
 
+    // ---- Net Colors ----
+    setNetColor: (netName, color) =>
+      set((state) => {
+        if (!state.project.netColors) state.project.netColors = {};
+        state.project.netColors[netName] = color;
+        state.isDirty = true;
+      }),
+
+    removeNetColor: (netName) =>
+      set((state) => {
+        if (state.project.netColors) {
+          delete state.project.netColors[netName];
+          state.isDirty = true;
+        }
+      }),
+
+    // ---- Hierarchical Sheets ----
+    addHierarchicalSheetInstance: (targetSheetId: string, position: { x: number; y: number }, size: { width: number; height: number }, parentSheetId: string) => {
+      const id = uuid();
+      set((state) => {
+        state.project.schematic.hierarchicalSheetInstances.push({
+          id,
+          targetSheetId,
+          position: { x: position.x, y: position.y },
+          size: { width: size.width, height: size.height },
+          sheetId: parentSheetId,
+        });
+        state.isDirty = true;
+      });
+      return id;
+    },
+
+    removeHierarchicalSheetInstance: (id: string) =>
+      set((state) => {
+        state.project.schematic.hierarchicalSheetInstances =
+          state.project.schematic.hierarchicalSheetInstances.filter((h) => h.id !== id);
+        state.isDirty = true;
+      }),
+
+    navigateIntoSheet: (targetSheetId: string) =>
+      set((state) => {
+        const sheet = state.project.schematic.sheets.find((s) => s.id === targetSheetId);
+        if (sheet) {
+          state.activeSheetId = targetSheetId;
+        }
+      }),
+
+    navigateUp: () =>
+      set((state) => {
+        const currentSheet = state.project.schematic.sheets.find(
+          (s) => s.id === state.activeSheetId
+        );
+        if (currentSheet?.parentSheetId) {
+          state.activeSheetId = currentSheet.parentSheetId;
+        }
+      }),
+
     // ---- Notes ----
-    addNote: (title, content = '') => {
+    addNote: (title: string, content: string = '') => {
       const id = uuid();
       set((state) => {
         if (!state.project.notes) state.project.notes = [];
@@ -307,7 +377,7 @@ export const useProjectStore = create<ProjectState>()(
       return id;
     },
 
-    updateNote: (noteId, updates) =>
+    updateNote: (noteId: string, updates: Partial<Pick<ProjectNote, 'title' | 'content'>>) =>
       set((state) => {
         if (!state.project.notes) return;
         const note = state.project.notes.find(n => n.id === noteId);
@@ -318,7 +388,7 @@ export const useProjectStore = create<ProjectState>()(
         state.isDirty = true;
       }),
 
-    removeNote: (noteId) =>
+    removeNote: (noteId: string) =>
       set((state) => {
         if (!state.project.notes) return;
         state.project.notes = state.project.notes.filter(n => n.id !== noteId);
@@ -475,6 +545,24 @@ export const useProjectStore = create<ProjectState>()(
 );
 
 export { createEmptyProject, createEmptySchematic, createEmptyPerfboard };
+
+export function getNetColor(netName: string): string | undefined {
+  return useProjectStore.getState().project.netColors?.[netName];
+}
+
+export function getSheetBreadcrumbs(): { id: string; name: string }[] {
+  const state = useProjectStore.getState();
+  const sheets = state.project.schematic.sheets;
+  const crumbs: { id: string; name: string }[] = [];
+  let current: { id: string; name: string; parentSheetId: string | null } | undefined =
+    sheets.find((s) => s.id === state.activeSheetId);
+  while (current) {
+    crumbs.unshift({ id: current.id, name: current.name });
+    const parentId = current.parentSheetId;
+    current = parentId ? sheets.find((s) => s.id === parentId) : undefined;
+  }
+  return crumbs;
+}
 
 export function getLastActiveProjectId(): string | null {
   try {

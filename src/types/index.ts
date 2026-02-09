@@ -47,6 +47,7 @@ export type ToolType =
   | 'place_component'
   | 'draw_wire'
   | 'place_label'
+  | 'place_sheet_instance'
   | 'measure'
   | 'delete';
 
@@ -455,6 +456,8 @@ export interface Project {
   componentLibrary: ComponentDefinition[];
   customComponents?: ComponentDefinition[];
   netlist: Netlist;
+  /** Per-net color overrides. Key = net label text (e.g. "VCC", "GND"). */
+  netColors?: Record<string, string>;
 }
 
 /** Lightweight entry stored in the project index (no heavy data). */
