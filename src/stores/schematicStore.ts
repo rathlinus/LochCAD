@@ -137,10 +137,13 @@ function restoreSchSnapshot(snap: SchSnapshot) {
 }
 
 /**
- * Remove wires that are connected to nothing at all (no component pin, no
- * other wire endpoint, no junction, no label) or that are just single-point
- * dots.  Runs iteratively because removing one wire may leave another
- * dangling.
+ * Remove wires that have at least one endpoint connected to nothing (no
+ * component pin, no other wire, no junction, no label) as well as
+ * single-point / zero-length dot wires.
+ *
+ * Runs iteratively: removing a wire may leave another wire's endpoint
+ * dangling.  Junctions and labels act as natural stop-points so only
+ * truly orphaned stubs are cleaned up.
  */
 function removeDanglingWires(
   s: ReturnType<typeof getSchematic>,
@@ -200,14 +203,22 @@ function removeDanglingWires(
         return false;
       });
 
-      // Remove only if NEITHER endpoint is connected to anything
-      if (!endpointConnected[0] && !endpointConnected[1]) {
+      // Remove if ANY endpoint is floating (connected to nothing at all)
+      if (!endpointConnected[0] || !endpointConnected[1]) {
         toRemove.add(wire.id);
       }
     }
 
     if (toRemove.size > 0) {
       s.wires = s.wires.filter((w) => !toRemove.has(w.id));
+      // Also clean up orphaned junctions that no longer touch any wire
+      const remainingSheetWires = s.wires.filter((w) => w.sheetId === sheetId);
+      s.junctions = s.junctions.filter((j) => {
+        if (j.sheetId !== sheetId) return true;
+        return remainingSheetWires.some((w) =>
+          w.points.some((p) => ptEq(p, j.position)),
+        );
+      });
       changed = true;
     }
   }
