@@ -177,7 +177,7 @@ export default function PerfboardEditor() {
         const libComp = allLib.find((l) => l.id === pbComp.libraryId);
         if (!libComp) continue;
         // Find the pad for this pin
-        const pad = libComp.footprint.pads.find((p) => p.pinNumber === conn.pinNumber);
+        const pad = libComp.footprint.pads.find((p) => p.number === conn.pinNumber);
         if (!pad) continue;
         // Rotate pad position
         const r = ((pbComp.rotation % 360) + 360) % 360;
