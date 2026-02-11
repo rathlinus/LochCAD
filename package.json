@@ -1,8 +1,28 @@
 {
   "name": "lochcad",
-  "private": true,
-  "version": "0.1.0",
-  "description": "LochCAD - Web-based schematic and perfboard CAD",
+  "version": "0.3.8",
+  "description": "LochCAD — Open-Source Schaltplan- & Lochraster-CAD im Browser",
+  "author": "Linus Rath",
+  "license": "MIT",
+  "homepage": "https://lochcad.de",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/linusrath/LochCAD.git"
+  },
+  "bugs": {
+    "url": "https://github.com/linusrath/LochCAD/issues"
+  },
+  "keywords": [
+    "eda",
+    "cad",
+    "schematic",
+    "perfboard",
+    "stripboard",
+    "lochraster",
+    "electronics",
+    "circuit",
+    "pcb"
+  ],
   "type": "module",
   "scripts": {
     "dev": "vite",

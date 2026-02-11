@@ -453,8 +453,18 @@ export function TopBar() {
         );
       }},
       { separator: true, label: '' },
+      { label: 'Dokumentation', icon: <FileText size={14} />, action: () => {
+        window.open('https://linusrath.github.io/LochCAD/', '_blank');
+      }},
+      { label: 'GitHub Repository', icon: <Globe size={14} />, action: () => {
+        window.open('https://github.com/linusrath/LochCAD', '_blank');
+      }},
+      { label: 'Bug melden', icon: <AlertTriangle size={14} />, action: () => {
+        window.open('https://github.com/linusrath/LochCAD/issues/new?template=bug_report.md', '_blank');
+      }},
+      { separator: true, label: '' },
       { label: 'Über LochCAD', icon: <Info size={14} />, action: () => {
-        useToastStore.getState().showToast('LochCAD v0.3.8 — Lochraster-CAD by Linus Rath', 'info');
+        useToastStore.getState().showToast('LochCAD v0.3.8 — Open-Source Lochraster-CAD by Linus Rath · MIT-Lizenz', 'info');
       }},
     ],
   };

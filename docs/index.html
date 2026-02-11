@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LochCAD — Dokumentation</title>
+  <meta name="description" content="LochCAD — Open-Source Schaltplan- & Lochraster-CAD im Browser. Dokumentation, Anleitungen und API-Referenz." />
+  <meta name="theme-color" content="#1b1f2b" />
+  <link rel="icon" type="image/svg+xml" href="lochcad-logo.svg" />
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="LochCAD — Dokumentation" />
+  <meta property="og:description" content="Open-Source Schaltplan- & Lochraster-CAD im Browser." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://linusrath.github.io/LochCAD/" />
+
+  <style>
+    :root {
+      --bg: #1b1f2b;
+      --surface: #232838;
+      --panel: #2a3040;
+      --accent: #4fc3f7;
+      --accent-hover: #29b6f6;
+      --text: #e0e0e0;
+      --text-dim: #8890a0;
+      --green: #00ff88;
+      --border: rgba(255,255,255,0.08);
+      --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: var(--accent); text-decoration: none; transition: color 0.2s; }
+    a:hover { color: var(--accent-hover); }
+
+    /* Header */
+    .header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(8px);
+    }
+    .header-left { display: flex; align-items: center; gap: 0.75rem; }
+    .header-logo { width: 28px; height: 28px; }
+    .header-title { font-family: var(--font-mono); font-weight: 700; font-size: 1.1rem; letter-spacing: -0.02em; }
+    .header-nav { display: flex; gap: 1.5rem; }
+    .header-nav a { font-size: 0.85rem; color: var(--text-dim); transition: color 0.2s; }
+    .header-nav a:hover { color: var(--text); }
+
+    /* Hero */
+    .hero {
+      text-align: center;
+      padding: 5rem 2rem 4rem;
+      background: linear-gradient(180deg, var(--surface) 0%, var(--bg) 100%);
+    }
+    .hero-logo { width: 80px; height: 80px; margin-bottom: 1.5rem; }
+    .hero h1 {
+      font-family: var(--font-mono);
+      font-size: 2.5rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 0.75rem;
+    }
+    .hero p {
+      color: var(--text-dim);
+      font-size: 1.1rem;
+      max-width: 540px;
+      margin: 0 auto 2rem;
+    }
+    .hero-buttons { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.65rem 1.5rem;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      transition: all 0.2s;
+      border: 1px solid transparent;
+      cursor: pointer;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: var(--bg);
+    }
+    .btn-primary:hover { background: var(--accent-hover); color: var(--bg); }
+    .btn-outline {
+      background: transparent;
+      color: var(--text);
+      border-color: var(--border);
+    }
+    .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* Features Grid */
+    .section { padding: 4rem 2rem; max-width: 1080px; margin: 0 auto; }
+    .section-title {
+      font-family: var(--font-mono);
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.02em;
+    }
+    .section-subtitle {
+      color: var(--text-dim);
+      font-size: 0.95rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.25rem;
+    }
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      transition: border-color 0.2s;
+    }
+    .feature-card:hover { border-color: rgba(79, 195, 247, 0.3); }
+    .feature-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 6px;
+      background: rgba(79, 195, 247, 0.1);
+      color: var(--accent);
+      font-size: 0.65rem;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.75rem;
+    }
+    .feature-card h3 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: 0.4rem;
+    }
+    .feature-card p {
+      font-size: 0.82rem;
+      color: var(--text-dim);
+      line-height: 1.5;
+    }
+
+    /* Docs Grid */
+    .docs-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.25rem;
+    }
+    .docs-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      transition: border-color 0.2s;
+    }
+    .docs-card:hover { border-color: rgba(79, 195, 247, 0.3); }
+    .docs-card h3 { font-size: 1rem; }
+    .docs-card p { font-size: 0.85rem; color: var(--text-dim); flex: 1; }
+    .docs-card .docs-link { font-size: 0.82rem; margin-top: 0.5rem; }
+
+    /* Quick Start */
+    .quickstart {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 2rem;
+      margin-top: 2rem;
+    }
+    .quickstart h3 {
+      font-family: var(--font-mono);
+      font-size: 1rem;
+      margin-bottom: 1rem;
+    }
+    .code-block {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1rem 1.25rem;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      color: var(--green);
+      overflow-x: auto;
+      line-height: 1.7;
+    }
+    .code-comment { color: var(--text-dim); }
+
+    /* Tech Stack */
+    .tech-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+    .tech-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.4rem 0.9rem;
+      border-radius: 20px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      transition: border-color 0.2s;
+    }
+    .tech-badge:hover { border-color: var(--accent); color: var(--text); }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      padding: 3rem 2rem;
+      border-top: 1px solid var(--border);
+      color: var(--text-dim);
+      font-size: 0.8rem;
+    }
+    .footer a { color: var(--text-dim); }
+    .footer a:hover { color: var(--accent); }
+    .footer-links { display: flex; gap: 1.5rem; justify-content: center; margin-bottom: 1rem; }
+
+    /* Responsive */
+    @media (max-width: 640px) {
+      .hero h1 { font-size: 1.8rem; }
+      .hero p { font-size: 0.95rem; }
+      .header-nav { display: none; }
+      .section { padding: 3rem 1.25rem; }
+    }
+  </style>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <img src="lochcad-logo.svg" alt="LochCAD" class="header-logo" />
+      <span class="header-title">LochCAD</span>
+    </div>
+    <nav class="header-nav">
+      <a href="#features">Features</a>
+      <a href="#docs">Dokumentation</a>
+      <a href="#quickstart">Schnellstart</a>
+      <a href="https://lochcad.de" target="_blank">Live-Demo ↗</a>
+      <a href="https://github.com/linusrath/LochCAD" target="_blank">GitHub ↗</a>
+    </nav>
+  </header>
+
+  <!-- Hero -->
+  <section class="hero">
+    <img src="lochcad-logo.svg" alt="LochCAD" class="hero-logo" />
+    <h1>LochCAD</h1>
+    <p>Open-Source Schaltplan- &amp; Lochraster-CAD — direkt im Browser. Schaltpläne zeichnen, auf Lochraster übertragen, in 3D prüfen und exportieren.</p>
+    <div class="hero-buttons">
+      <a href="https://lochcad.de" class="btn btn-primary" target="_blank">
+        App starten
+      </a>
+      <a href="https://github.com/linusrath/LochCAD" class="btn btn-outline" target="_blank">
+        GitHub Repository
+      </a>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="section" id="features">
+    <h2 class="section-title">Features</h2>
+    <p class="section-subtitle">Alles was du brauchst — vom Schaltplan bis zur fertigen Platine.</p>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">SCH</div>
+        <h3>Schaltplan-Editor</h3>
+        <p>Professioneller Schaltplan-Editor mit Symbolen, Drähten, Bussen, Net-Labels und Multi-Sheet-Support.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">PCB</div>
+        <h3>Lochraster-Editor</h3>
+        <p>Bauteile auf Perfboard oder Stripboard platzieren. Drähte, Lötbrücken, Drahtbrücken und Track-Cuts.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">3D</div>
+        <h3>3D-Vorschau</h3>
+        <p>Interaktive 3D-Ansicht der bestückten Platine — drehen, zoomen, kontrollieren.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">LIB</div>
+        <h3>Bauteil-Editor</h3>
+        <p>Eigene Schaltplansymbole und Footprints definieren und in Projekten verwenden.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">ART</div>
+        <h3>Autorouter & Auto-Layout</h3>
+        <p>Automatisches Routen und Platzieren — spart Zeit bei komplexen Schaltungen.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">DRC</div>
+        <h3>ERC & DRC</h3>
+        <p>Electrical und Design Rules Check finden Fehler, bevor sie auf der Platine landen.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">EXP</div>
+        <h3>Export</h3>
+        <p>SPICE-Netzliste, Stückliste (CSV/HTML), Projektdatei — alles mit einem Klick.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">OFF</div>
+        <h3>Offline & Privat</h3>
+        <p>Läuft komplett im Browser. Keine Daten verlassen deinen Rechner — kein Account nötig.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Docs -->
+  <section class="section" id="docs">
+    <h2 class="section-title">Dokumentation</h2>
+    <p class="section-subtitle">Anleitungen, Architektur und API-Referenz für Nutzer und Entwickler.</p>
+    <div class="docs-grid">
+      <div class="docs-card">
+        <h3>Benutzerhandbuch</h3>
+        <p>Vom ersten Schaltplan bis zum fertigen Export — Schritt für Schritt erklärt.</p>
+        <a href="https://github.com/linusrath/LochCAD/blob/main/docs/BENUTZERHANDBUCH.md" class="docs-link" target="_blank">Handbuch lesen →</a>
+      </div>
+      <div class="docs-card">
+        <h3>Architektur</h3>
+        <p>Technische Übersicht: Schichten, Datenfluss, Module und State-Management.</p>
+        <a href="https://github.com/linusrath/LochCAD/blob/main/docs/ARCHITEKTUR.md" class="docs-link" target="_blank">Architektur lesen →</a>
+      </div>
+      <div class="docs-card">
+        <h3>API-Referenz</h3>
+        <p>Typen, Stores, Engine-Module und Export-Funktionen — die technische Referenz.</p>
+        <a href="https://github.com/linusrath/LochCAD/blob/main/docs/API-REFERENZ.md" class="docs-link" target="_blank">API-Referenz lesen →</a>
+      </div>
+      <div class="docs-card">
+        <h3>Mitwirken</h3>
+        <p>So kannst du zu LochCAD beitragen: Setup, Konventionen, Pull Requests.</p>
+        <a href="https://github.com/linusrath/LochCAD/blob/main/CONTRIBUTING.md" class="docs-link" target="_blank">Contributing Guide →</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Quickstart -->
+  <section class="section" id="quickstart">
+    <h2 class="section-title">Schnellstart</h2>
+    <p class="section-subtitle">In unter 2 Minuten lokal loslegen.</p>
+    <div class="quickstart">
+      <h3>Installation</h3>
+      <div class="code-block">
+        <span class="code-comment"># Repository klonen</span><br>
+        git clone https://github.com/linusrath/LochCAD.git<br>
+        cd LochCAD<br><br>
+        <span class="code-comment"># Abhängigkeiten installieren</span><br>
+        npm install<br><br>
+        <span class="code-comment"># Entwicklungsserver starten</span><br>
+        npm run dev<br><br>
+        <span class="code-comment"># → http://localhost:3000</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Tech Stack -->
+  <section class="section">
+    <h2 class="section-title">Tech Stack</h2>
+    <p class="section-subtitle">Moderne Webtechnologien für eine performante Anwendung.</p>
+    <div class="tech-grid">
+      <span class="tech-badge">React 18</span>
+      <span class="tech-badge">TypeScript 5.6</span>
+      <span class="tech-badge">Vite 6</span>
+      <span class="tech-badge">Zustand</span>
+      <span class="tech-badge">Immer</span>
+      <span class="tech-badge">Konva</span>
+      <span class="tech-badge">Three.js</span>
+      <span class="tech-badge">React Three Fiber</span>
+      <span class="tech-badge">Tailwind CSS</span>
+      <span class="tech-badge">Lucide Icons</span>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-links">
+      <a href="https://github.com/linusrath/LochCAD">GitHub</a>
+      <a href="https://lochcad.de">Live-Demo</a>
+      <a href="https://github.com/linusrath/LochCAD/blob/main/LICENSE">MIT-Lizenz</a>
+      <a href="https://github.com/linusrath/LochCAD/blob/main/CHANGELOG.md">Changelog</a>
+    </div>
+    <p>LochCAD v0.3.8 · Erstellt von <a href="https://github.com/linusrath">Linus Rath</a></p>
+  </footer>
+
+</body>
+</html>

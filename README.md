@@ -1,119 +1,185 @@
-# LochCAD
+<p align="center">
+  <img src="public/lochcad-logo.svg" alt="LochCAD Logo" width="96" />
+</p>
 
-A web-based schematic capture and perfboard layout CAD tool for through-hole electronics prototyping. LochCAD provides an integrated workflow: draw schematics, lay out components on a virtual perfboard, and preview the result in 3D — all from the browser.
+<h1 align="center">LochCAD</h1>
 
-## Features
+<p align="center">
+  <strong>Open-Source Schaltplan- &amp; Lochraster-CAD — direkt im Browser.</strong>
+</p>
 
-### Schematic Editor
-- Place and wire standard electronic components (resistors, capacitors, ICs, transistors, connectors, etc.)
-- Multi-sheet hierarchical schematics with sheet pins and bus support
-- Net labels, power symbols, junctions, and bus entries
-- Electrical Rules Check (ERC) for detecting unconnected pins, conflicting types, and missing drivers
-- Automatic netlist generation
+<p align="center">
+  <a href="https://lochcad.de">Live-Demo</a> ·
+  <a href="docs/BENUTZERHANDBUCH.md">Dokumentation</a> ·
+  <a href="CONTRIBUTING.md">Mitwirken</a> ·
+  <a href="CHANGELOG.md">Changelog</a>
+</p>
 
-### Perfboard / Stripboard Layout
-- Visual placement of through-hole components on a perfboard or stripboard grid
-- Wiring, solder bridges, wire bridges, and track cuts
-- Auto-routing with Manhattan-path algorithm and collision detection
-- Design Rules Check (DRC) for overlapping components, out-of-bounds placement, and unconnected nets
-- Configurable board sizes (standard presets from 24x18 up to Eurocard 64x39)
+<p align="center">
+  <img src="https://img.shields.io/badge/version-0.3.8-blue?style=flat-square" alt="Version" />
+  <img src="https://img.shields.io/badge/Lizenz-MIT-green?style=flat-square" alt="MIT Lizenz" />
+  <img src="https://img.shields.io/badge/TypeScript-5.6-blue?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/React-18-61dafb?style=flat-square&logo=react&logoColor=white" alt="React" />
+  <img src="https://img.shields.io/badge/Vite-6-646cff?style=flat-square&logo=vite&logoColor=white" alt="Vite" />
+</p>
 
-### 3D Preview
-- Real-time 3D visualization of the assembled board
-- Parametric 3D models for common packages (axial resistors, ceramic/electrolytic capacitors, DIP ICs, TO-92/TO-220 transistors, LEDs, connectors, etc.)
+---
 
-### Component Library
-- Built-in library with resistors, capacitors, inductors, diodes, LEDs, transistors, voltage regulators, ICs, connectors, switches, crystals, and more
-- Custom component editor for creating new symbols and footprints
-- Pin mapping between schematic symbols and physical footprints
+## Über das Projekt
 
-### Export
-- Save/load projects in `.lochcad` format (JSON-based)
-- SPICE netlist generation
-- Bill of Materials (BOM) export in CSV and HTML
-- Autosave to browser local storage
+**LochCAD** ist ein webbasiertes EDA-Tool (Electronic Design Automation), das speziell für die Arbeit mit Lochrasterplatinen entwickelt wurde. Schaltpläne zeichnen, auf Lochraster übertragen, in 3D prüfen und als Netzliste oder Stückliste exportieren — alles kostenlos im Browser, ohne Installation.
 
-## Tech Stack
+### Features
 
-- **Framework:** React 18 with TypeScript
-- **Build Tool:** Vite
-- **State Management:** Zustand with Immer
-- **2D Canvas:** Konva / react-konva
-- **3D Rendering:** Three.js via @react-three/fiber and @react-three/drei
-- **Styling:** Tailwind CSS
-- **Fonts:** Inter (UI), JetBrains Mono (values/references)
+| Feature | Beschreibung |
+|---|---|
+| **Schaltplan-Editor** | Symbole platzieren, Drähte ziehen, Net-Labels vergeben — mit Multi-Sheet-Support |
+| **Lochraster-Editor** | Bauteile auf Perfboard/Stripboard platzieren, Drähte routen, Lötbrücken setzen |
+| **3D-Vorschau** | Interaktive 3D-Ansicht der bestückten Platine (Three.js) |
+| **Bauteil-Editor** | Eigene Schaltplansymbole und Footprints definieren |
+| **Autorouter** | Automatisches Routen von Verbindungen auf dem Lochraster |
+| **Auto-Layout** | Automatische Bauteilplatzierung auf dem Lochraster |
+| **ERC / DRC** | Electrical & Design Rules Check für Schaltplan und Layout |
+| **Export** | `.lochcad`-Projekt, SPICE-Netzliste, Stückliste (CSV/HTML), Netzlisten-JSON |
+| **Projektmanager** | Mehrere Projekte verwalten, importieren, exportieren, archivieren |
+| **Offline-fähig** | Läuft komplett im Browser — keine Daten verlassen den Rechner |
 
-## Getting Started
+### Screenshots
 
-### Prerequisites
+> *Screenshots folgen — Pull Requests willkommen!*
 
-- Node.js (v18 or later recommended)
-- npm
+---
+
+## Schnellstart
+
+### Voraussetzungen
+
+- [Node.js](https://nodejs.org/) ≥ 18
+- [npm](https://www.npmjs.com/) oder [pnpm](https://pnpm.io/)
 
 ### Installation
 
 ```bash
-git clone https://github.com/rathlinus/LochCAD.git
+# Repository klonen
+git clone https://github.com/linusrath/LochCAD.git
 cd LochCAD
+
+# Abhängigkeiten installieren
 npm install
-```
 
-### Development
-
-```bash
+# Entwicklungsserver starten
 npm run dev
 ```
 
-Opens at `http://localhost:3000`.
+Die App ist dann erreichbar unter **http://localhost:3000**.
 
-### Production Build
+### Build für Produktion
 
 ```bash
 npm run build
 npm run preview
 ```
 
-## Keyboard Shortcuts
+---
 
-| Action       | Shortcut   |
-|--------------|------------|
-| Save         | Ctrl+S     |
-| Open         | Ctrl+O     |
-| New Project  | Ctrl+N     |
-| Export       | Ctrl+E     |
-| Undo         | Ctrl+Z     |
-| Redo         | Ctrl+Y     |
-| Select All   | Ctrl+A     |
-| Delete       | Delete     |
-| Rotate       | R          |
-| Mirror       | X          |
-| Wire Tool    | W          |
-| Bus Tool     | B          |
-| Label Tool   | L          |
-| Move         | M          |
-| Zoom In      | Ctrl+=     |
-| Zoom Out     | Ctrl+-     |
-| Zoom Fit     | Ctrl+0     |
-
-## Project Structure
+## Projektstruktur
 
 ```
-src/
-  components/        UI layout, toolbar, sidebar, properties panel
-  constants/         Grid settings, colors, board presets, shortcuts
-  features/
-    schematic-editor/   Schematic canvas and symbol rendering
-    perfboard-editor/   Perfboard canvas and layout tools
-    preview-3d/         Three.js 3D board preview
-    component-editor/   Custom component creation
-  lib/
-    component-library/  Built-in component definitions
-    engine/             Netlist builder, ERC, DRC, auto-router
-    export/             Project file I/O, SPICE/BOM export
-  stores/              Zustand stores (project, schematic, perfboard)
-  types/               TypeScript type definitions
+LochCAD/
+├── public/                  # Statische Assets (Logo, Icons)
+├── src/
+│   ├── components/          # React UI-Komponenten
+│   │   ├── layout/          #   App-Layout, TopBar, Toolbar, StatusBar
+│   │   ├── properties/      #   Eigenschaften-Panel
+│   │   └── sidebar/         #   Bauteil-Bibliothek Sidebar
+│   ├── constants/           # Globale Konstanten (Grid, Farben, Shortcuts)
+│   ├── features/            # Feature-Module
+│   │   ├── schematic-editor/   # Schaltplan-Editor (Konva)
+│   │   ├── perfboard-editor/   # Lochraster-Editor (Konva)
+│   │   ├── preview-3d/         # 3D-Vorschau (Three.js / R3F)
+│   │   └── component-editor/   # Bauteil-Editor
+│   ├── lib/                 # Kernlogik
+│   │   ├── engine/          #   Netlist, Router, Auto-Layout, ERC, DRC
+│   │   ├── export/          #   SPICE, BOM, Projektdatei
+│   │   ├── component-library/  # Eingebaute Bauteilbibliothek
+│   │   ├── clipboard.ts     #   Copy/Paste-Logik
+│   │   └── units.ts         #   SI-Einheiten-Konvertierung
+│   ├── stores/              # Zustand State-Management
+│   └── types/               # TypeScript-Typdefinitionen
+├── docs/                    # Dokumentation
+├── nginx/                   # Nginx-Konfiguration (Deployment)
+├── vite.config.ts           # Vite-Konfiguration
+├── tailwind.config.js       # Tailwind CSS-Konfiguration
+└── tsconfig.json            # TypeScript-Konfiguration
 ```
 
-## License
+---
 
-This project is not yet published under a specific license. All rights reserved.
+## Technologie-Stack
+
+| Technologie | Einsatz |
+|---|---|
+| [React 18](https://react.dev/) | UI-Framework |
+| [TypeScript 5.6](https://www.typescriptlang.org/) | Typisierung |
+| [Vite 6](https://vitejs.dev/) | Build-Tool & Dev-Server |
+| [Zustand](https://zustand-demo.pmnd.rs/) | State-Management (mit Immer) |
+| [Konva / react-konva](https://konvajs.org/) | 2D-Canvas (Schaltplan & Lochraster) |
+| [Three.js / @react-three/fiber](https://docs.pmnd.rs/react-three-fiber/) | 3D-Vorschau |
+| [Tailwind CSS](https://tailwindcss.com/) | Styling |
+| [Lucide Icons](https://lucide.dev/) | Icon-Set |
+
+---
+
+## Tastenkürzel
+
+| Kürzel | Aktion |
+|---|---|
+| `Ctrl+S` | Projekt speichern |
+| `Ctrl+Shift+P` | Projektmanager öffnen |
+| `Ctrl+N` | Neues Projekt |
+| `Ctrl+O` | Projekt öffnen / importieren |
+| `Ctrl+E` | Projekt exportieren |
+| `Ctrl+Z` / `Ctrl+Y` | Undo / Redo |
+| `Ctrl+A` | Alles auswählen |
+| `Ctrl+=` / `Ctrl+-` | Zoom rein / raus |
+| `Ctrl+0` | Zoom zurücksetzen |
+| `W` | Draht-Werkzeug |
+| `R` | Bauteil drehen |
+| `X` | Bauteil spiegeln |
+| `L` | Net-Label platzieren |
+| `Del` / `Backspace` | Auswahl löschen |
+| `Esc` | Werkzeug abbrechen |
+
+---
+
+## Mitwirken
+
+Beiträge sind herzlich willkommen! Lies bitte zuerst die [CONTRIBUTING.md](CONTRIBUTING.md), bevor du einen Pull Request erstellst.
+
+### Kurzfassung
+
+1. Fork erstellen
+2. Feature-Branch anlegen (`git checkout -b feature/mein-feature`)
+3. Änderungen committen (`git commit -m 'feat: Beschreibung'`)
+4. Branch pushen (`git push origin feature/mein-feature`)
+5. Pull Request erstellen
+
+---
+
+## Lizenz
+
+Dieses Projekt steht unter der [MIT-Lizenz](LICENSE). Du darfst es frei verwenden, verändern und weitergeben.
+
+---
+
+## Danksagungen
+
+- [KiCad](https://www.kicad.org/) — Inspiration für EDA-Workflows
+- [Fritzing](https://fritzing.org/) — Inspiration für Lochraster-Ansatz
+- Alle Open-Source-Bibliotheken, auf denen LochCAD aufbaut
+
+---
+
+<p align="center">
+  <sub>Entwickelt von <a href="https://github.com/linusrath">Linus Rath</a></sub>
+</p>
