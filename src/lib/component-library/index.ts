@@ -986,17 +986,16 @@ function createICs(): ComponentDefinition[] {
       keywords: ['opamp', 'op-amp', 'operational amplifier', 'IC'],
       symbol: {
         graphics: [
-          { type: 'rectangle', start: { x: -30, y: -20 }, end: { x: 30, y: 20 }, stroke: '#2176B7', strokeWidth: 2 },
-          { type: 'text', position: { x: -22, y: -10 }, text: '+', fontSize: 12, stroke: '#2176B7' },
-          { type: 'text', position: { x: -22, y: 16 }, text: '−', fontSize: 12, stroke: '#2176B7' },
-          { type: 'polyline', points: [{ x: 8, y: -10 }, { x: 22, y: 0 }, { x: 8, y: 10 }], stroke: '#2176B7', strokeWidth: 1.5, closed: true },
+          { type: 'polyline', points: [{ x: -20, y: -25 }, { x: 25, y: 0 }, { x: -20, y: 25 }], stroke: '#2176B7', strokeWidth: 2, closed: true },
+          { type: 'text', position: { x: -15, y: -12 }, text: '+', fontSize: 10, stroke: '#2176B7' },
+          { type: 'text', position: { x: -15, y: 8 }, text: '−', fontSize: 10, stroke: '#2176B7' },
         ],
         pins: [
-          { number: '2', name: 'IN+', position: { x: -60, y: -10 }, length: 30, direction: 0, electricalType: 'input' },
-          { number: '3', name: 'IN-', position: { x: -60, y: 10 }, length: 30, direction: 0, electricalType: 'input' },
-          { number: '6', name: 'OUT', position: { x: 60, y: 0 }, length: 30, direction: 180, electricalType: 'output' },
-          { number: '7', name: 'V+', position: { x: 0, y: -40 }, length: 20, direction: 90, electricalType: 'power_in' },
-          { number: '4', name: 'V-', position: { x: 0, y: 40 }, length: 20, direction: 270, electricalType: 'power_in' },
+          { number: '2', name: 'IN+', position: { x: -60, y: -12 }, length: 40, direction: 0, electricalType: 'input' },
+          { number: '3', name: 'IN-', position: { x: -60, y: 12 }, length: 40, direction: 0, electricalType: 'input' },
+          { number: '6', name: 'OUT', position: { x: 60, y: 0 }, length: 35, direction: 180, electricalType: 'output' },
+          { number: '7', name: 'V+', position: { x: 2, y: -40 }, length: 27, direction: 90, electricalType: 'power_in' },
+          { number: '4', name: 'V-', position: { x: 2, y: 40 }, length: 27, direction: 270, electricalType: 'power_in' },
         ],
       },
       footprint: {
@@ -1706,7 +1705,7 @@ function createMiscComponents(): ComponentDefinition[] {
         graphics: [
           { type: 'rectangle', start: { x: -20, y: -7 }, end: { x: 20, y: 7 }, stroke: '#2176B7', strokeWidth: 2 },
           { type: 'line', start: { x: -25, y: 12 }, end: { x: 25, y: -12 }, stroke: '#2176B7', strokeWidth: 1.5 },
-          { type: 'text', position: { x: 22, y: -16 }, text: '−t', fontSize: 8, stroke: '#2176B7' },
+          { type: 'text', position: { x: 22, y: -16 }, text: 'ϑ−', fontSize: 8, stroke: '#2176B7' },
         ],
         pins: [
           { number: '1', name: '1', position: { x: -40, y: 0 }, length: 20, direction: 0, electricalType: 'passive' },
@@ -1801,13 +1800,13 @@ function createMiscComponents(): ComponentDefinition[] {
       keywords: ['varistor', 'MOV', 'surge', 'protection', 'überspannung'],
       symbol: {
         graphics: [
-          { type: 'line', start: { x: -10, y: -12 }, end: { x: -10, y: 12 }, stroke: '#2176B7', strokeWidth: 2 },
-          { type: 'line', start: { x: -4, y: -12 }, end: { x: -4, y: 12 }, stroke: '#2176B7', strokeWidth: 2 },
-          { type: 'line', start: { x: -18, y: 10 }, end: { x: 8, y: -10 }, stroke: '#2176B7', strokeWidth: 1.5 },
+          { type: 'rectangle', start: { x: -20, y: -7 }, end: { x: 20, y: 7 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'line', start: { x: -25, y: 12 }, end: { x: 25, y: -12 }, stroke: '#2176B7', strokeWidth: 1.5 },
+          { type: 'text', position: { x: 22, y: -16 }, text: 'U', fontSize: 8, stroke: '#2176B7' },
         ],
         pins: [
-          { number: '1', name: '1', position: { x: -40, y: 0 }, length: 30, direction: 0, electricalType: 'passive' },
-          { number: '2', name: '2', position: { x: 40, y: 0 }, length: 44, direction: 180, electricalType: 'passive' },
+          { number: '1', name: '1', position: { x: -40, y: 0 }, length: 20, direction: 0, electricalType: 'passive' },
+          { number: '2', name: '2', position: { x: 40, y: 0 }, length: 20, direction: 180, electricalType: 'passive' },
         ],
       },
       footprint: {
