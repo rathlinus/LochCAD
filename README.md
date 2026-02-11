@@ -44,12 +44,6 @@
 | **Projektmanager** | Mehrere Projekte verwalten, importieren, exportieren, archivieren |
 | **Offline-fähig** | Läuft komplett im Browser — keine Daten verlassen den Rechner |
 
-### Screenshots
-
-> *Screenshots folgen — Pull Requests willkommen!*
-
----
-
 ## Schnellstart
 
 ### Voraussetzungen
@@ -156,30 +150,13 @@ LochCAD/
 
 Beiträge sind herzlich willkommen! Lies bitte zuerst die [CONTRIBUTING.md](CONTRIBUTING.md), bevor du einen Pull Request erstellst.
 
-### Kurzfassung
-
-1. Fork erstellen
-2. Feature-Branch anlegen (`git checkout -b feature/mein-feature`)
-3. Änderungen committen (`git commit -m 'feat: Beschreibung'`)
-4. Branch pushen (`git push origin feature/mein-feature`)
-5. Pull Request erstellen
-
----
-
 ## Lizenz
 
 Dieses Projekt steht unter der [MIT-Lizenz](LICENSE). Du darfst es frei verwenden, verändern und weitergeben.
 
----
-
-## Danksagungen
-
-- [KiCad](https://www.kicad.org/) — Inspiration für EDA-Workflows
-- [Fritzing](https://fritzing.org/) — Inspiration für Lochraster-Ansatz
-- Alle Open-Source-Bibliotheken, auf denen LochCAD aufbaut
 
 ---
 
 <p align="center">
-  <sub>Entwickelt von <a href="https://github.com/linusrath">Linus Rath</a></sub>
+  <sub>Entwickelt von <a href="https://rathblume.de">Linus Rath</a></sub>
 </p>
