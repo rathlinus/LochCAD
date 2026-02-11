@@ -1,9 +1,10 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useProjectStore, useSchematicStore, usePerfboardStore } from '@/stores';
 import { getBuiltInComponents } from '@/lib/component-library';
 import type { ComponentDefinition, ComponentCategory } from '@/types';
 import { COMPONENT_CATEGORIES } from '@/constants';
 import { ProjectNotes } from '../ProjectNotes';
+import { Component3DTooltip } from './Component3DTooltip';
 import {
   ChevronRight,
   ChevronDown,
@@ -61,6 +62,25 @@ export function Sidebar() {
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['Resistors', 'Capacitors']));
   const [activeTab, setActiveTab] = useState<'library' | 'project'>('library');
   const searchRef = useRef<HTMLInputElement>(null);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [hoveredComp, setHoveredComp] = useState<ComponentDefinition | null>(null);
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const handleCompMouseEnter = useCallback((comp: ComponentDefinition, e: React.MouseEvent) => {
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    hoverTimerRef.current = setTimeout(() => {
+      setHoveredComp(comp);
+      // Position tooltip to the right of the sidebar item, clamped to viewport
+      const y = Math.min(rect.top, window.innerHeight - 190);
+      setTooltipPos({ x: rect.right + 8, y });
+    }, 320);
+  }, []);
+
+  const handleCompMouseLeave = useCallback(() => {
+    if (hoverTimerRef.current) { clearTimeout(hoverTimerRef.current); hoverTimerRef.current = null; }
+    setHoveredComp(null);
+  }, []);
 
   const builtIn = useMemo(() => getBuiltInComponents(), []);
   const allComponents = useMemo(() => [...builtIn, ...customComponents], [builtIn, customComponents]);
@@ -107,6 +127,11 @@ export function Sidebar() {
   };
 
   // Keyboard shortcut: focus search with Ctrl+F when sidebar is visible
+  useEffect(() => {
+    const timerRef = hoverTimerRef;
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, []);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key === 'f' && activeTab === 'library') {
@@ -220,6 +245,8 @@ export function Sidebar() {
                     key={comp.id}
                     className="w-full text-left px-3 py-1.5 text-xs hover:bg-lochcad-accent/10 rounded-sm transition-colors cursor-grab active:cursor-grabbing group"
                     onClick={() => handlePlaceComponent(comp)}
+                    onMouseEnter={(e) => handleCompMouseEnter(comp, e)}
+                    onMouseLeave={handleCompMouseLeave}
                     title={comp.description}
                   >
                     <div className="text-lochcad-text">
@@ -265,6 +292,8 @@ export function Sidebar() {
                             <button
                               className="flex-1 text-left px-3 py-1 text-xs text-lochcad-text-dim hover:text-lochcad-text cursor-grab active:cursor-grabbing truncate"
                               onClick={() => handlePlaceComponent(comp)}
+                              onMouseEnter={(e) => handleCompMouseEnter(comp, e)}
+                              onMouseLeave={handleCompMouseLeave}
                               title={comp.description ?? comp.name}
                             >
                               {comp.name || comp.id || '(Unbenannt)'}
@@ -310,6 +339,21 @@ export function Sidebar() {
             <ProjectTreeView />
           </div>
           <ProjectNotes />
+        </div>
+      )}
+
+      {/* Floating 3D model tooltip */}
+      {hoveredComp && hoveredComp.model3d && (
+        <div
+          className="fixed z-[9999] pointer-events-none"
+          style={{ left: tooltipPos.x, top: tooltipPos.y }}
+        >
+          <div className="bg-lochcad-surface border border-lochcad-panel/50 rounded-lg shadow-xl overflow-hidden">
+            <Component3DTooltip definition={hoveredComp} />
+            <div className="px-2 py-1.5 text-[10px] text-lochcad-text-dim text-center border-t border-lochcad-panel/30 truncate max-w-[160px]">
+              {hoveredComp.name}
+            </div>
+          </div>
         </div>
       )}
     </div>

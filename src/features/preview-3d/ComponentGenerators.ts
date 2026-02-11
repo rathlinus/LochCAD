@@ -1029,6 +1029,474 @@ function buildTactileSwitch(p: Record<string, number | string>, pads: PadPos3D[]
 }
 
 // ============================================================
+// Resistor Box — SMD-style or SIP box resistor package
+// ============================================================
+
+function buildResistorBox(p: Record<string, number | string>, pads: PadPos3D[], bt: number): THREE.Group {
+  const g = new THREE.Group();
+  const bodyW = (p.bodyWidth as number) || 5;
+  const bodyH = (p.bodyHeight as number) || 3;
+  const bodyD = (p.bodyDepth as number) || 2.5;
+
+  const p0 = pads[0] ?? { x: 0, z: 0 };
+  const p1 = pads[1] ?? { x: 10.16, z: 0 };
+  const cx = (p0.x + p1.x) / 2;
+  const cz = (p0.z + p1.z) / 2;
+  const bodyGap = 0.5;
+
+  // Rectangular body
+  const bodyGeom = new THREE.BoxGeometry(bodyW, bodyH, bodyD);
+  const body = new THREE.Mesh(bodyGeom, mat.resistorBoxBody);
+  body.position.set(cx, bodyGap + bodyH / 2, cz);
+  g.add(body);
+
+  // Value text on top
+  const textGeom = new THREE.PlaneGeometry(bodyW * 0.6, bodyD * 0.3);
+  const text = new THREE.Mesh(textGeom, mat.resistorBoxText);
+  text.position.set(cx, bodyGap + bodyH + 0.05, cz);
+  text.rotation.x = -Math.PI / 2;
+  g.add(text);
+
+  // Straight leads
+  addStraightLeads(g, pads, bodyGap, bt);
+
+  return g;
+}
+
+// ============================================================
+// Film / Box Capacitor — Rectangular box body with leads
+// ============================================================
+
+function buildFilmCap(p: Record<string, number | string>, pads: PadPos3D[], bt: number): THREE.Group {
+  const g = new THREE.Group();
+  const bodyW = (p.bodyWidth as number) || 7;
+  const bodyH = (p.bodyHeight as number) || 7.5;
+  const bodyD = (p.bodyDepth as number) || 3.5;
+
+  const p0 = pads[0] ?? { x: 0, z: 0 };
+  const p1 = pads[1] ?? { x: 10.16, z: 0 };
+  const cx = (p0.x + p1.x) / 2;
+  const cz = (p0.z + p1.z) / 2;
+  const bodyGap = 0.5;
+
+  // Rectangular body
+  const bodyGeom = new THREE.BoxGeometry(bodyW, bodyH, bodyD);
+  const body = new THREE.Mesh(bodyGeom, mat.filmCapBody);
+  body.position.set(cx, bodyGap + bodyH / 2, cz);
+  g.add(body);
+
+  // Text stripe on front face
+  const stripeGeom = new THREE.PlaneGeometry(bodyW * 0.8, bodyH * 0.15);
+  const stripe = new THREE.Mesh(stripeGeom, mat.filmCapText);
+  stripe.position.set(cx, bodyGap + bodyH * 0.65, cz + bodyD / 2 + 0.05);
+  g.add(stripe);
+
+  // Second stripe
+  const stripe2Geom = new THREE.PlaneGeometry(bodyW * 0.6, bodyH * 0.1);
+  const stripe2 = new THREE.Mesh(stripe2Geom, mat.filmCapText);
+  stripe2.position.set(cx, bodyGap + bodyH * 0.4, cz + bodyD / 2 + 0.05);
+  g.add(stripe2);
+
+  // Leads from body bottom to pads
+  g.add(bentLead(new THREE.Vector3(cx - bodyW * 0.3, bodyGap, cz), p0.x, p0.z, bt));
+  g.add(solderBlob(p0.x, p0.z, bt));
+  g.add(bentLead(new THREE.Vector3(cx + bodyW * 0.3, bodyGap, cz), p1.x, p1.z, bt));
+  g.add(solderBlob(p1.x, p1.z, bt));
+
+  return g;
+}
+
+// ============================================================
+// Tantalum Capacitor — Drop / teardrop shaped body
+// ============================================================
+
+function buildTantalumCap(p: Record<string, number | string>, pads: PadPos3D[], bt: number): THREE.Group {
+  const g = new THREE.Group();
+  const bodyW = (p.bodyWidth as number) || 4;
+  const bodyH = (p.bodyHeight as number) || 5;
+  const bodyD = (p.bodyDepth as number) || 2.5;
+
+  const p0 = pads[0] ?? { x: 0, z: 0 };
+  const p1 = pads[1] ?? { x: 5.08, z: 0 };
+  const cx = (p0.x + p1.x) / 2;
+  const cz = (p0.z + p1.z) / 2;
+  const bodyGap = 0.5;
+
+  // Teardrop / rounded box body
+  const shape = new THREE.Shape();
+  const hw = bodyW / 2;
+  const hd = bodyD / 2;
+  const r = Math.min(hw, hd) * 0.4;
+  shape.moveTo(-hw + r, -hd);
+  shape.lineTo(hw - r, -hd);
+  shape.quadraticCurveTo(hw, -hd, hw, -hd + r);
+  shape.lineTo(hw, hd - r);
+  shape.quadraticCurveTo(hw, hd, hw - r, hd);
+  shape.lineTo(-hw + r, hd);
+  shape.quadraticCurveTo(-hw, hd, -hw, hd - r);
+  shape.lineTo(-hw, -hd + r);
+  shape.quadraticCurveTo(-hw, -hd, -hw + r, -hd);
+
+  const extrudeSettings = { depth: bodyH, bevelEnabled: true, bevelThickness: 0.3, bevelSize: 0.3, bevelSegments: 3 };
+  const bodyGeom = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+  bodyGeom.rotateX(-Math.PI / 2);
+  const body = new THREE.Mesh(bodyGeom, mat.tantalumBody);
+  body.position.set(cx, bodyGap, cz);
+  g.add(body);
+
+  // Polarity mark (+ side) - white stripe
+  const markGeom = new THREE.BoxGeometry(0.3, bodyH * 0.7, bodyD * 0.8);
+  const mark = new THREE.Mesh(markGeom, mat.tantalumMark);
+  mark.position.set(cx - hw + 0.3, bodyGap + bodyH / 2, cz);
+  g.add(mark);
+
+  // Straight leads
+  addStraightLeads(g, pads, bodyGap, bt);
+
+  return g;
+}
+
+// ============================================================
+// MLCC Radial Capacitor — Multilayer ceramic, small rectangular
+// ============================================================
+
+function buildMLCCCap(p: Record<string, number | string>, pads: PadPos3D[], bt: number): THREE.Group {
+  const g = new THREE.Group();
+  const bodyW = (p.bodyWidth as number) || 3.2;
+  const bodyH = (p.bodyHeight as number) || 4;
+  const bodyD = (p.bodyDepth as number) || 1.6;
+
+  const p0 = pads[0] ?? { x: 0, z: 0 };
+  const p1 = pads[1] ?? { x: 2.54, z: 0 };
+  const cx = (p0.x + p1.x) / 2;
+  const cz = (p0.z + p1.z) / 2;
+  const bodyGap = 0.8;
+
+  // Small rectangular body standing vertical
+  const bodyGeom = new THREE.BoxGeometry(bodyW, bodyH, bodyD);
+  const body = new THREE.Mesh(bodyGeom, mat.mlccBody);
+  body.position.set(cx, bodyGap + bodyH / 2, cz);
+  g.add(body);
+
+  // Metal end caps (left and right)
+  for (const sign of [-1, 1]) {
+    const capGeom = new THREE.BoxGeometry(0.4, bodyH * 0.9, bodyD + 0.1);
+    const cap = new THREE.Mesh(capGeom, mat.lead);
+    cap.position.set(cx + sign * (bodyW / 2 - 0.1), bodyGap + bodyH / 2, cz);
+    g.add(cap);
+  }
+
+  // Bent leads from bottom
+  const exitLeft = new THREE.Vector3(cx - bodyW / 2 + 0.2, bodyGap, cz);
+  const exitRight = new THREE.Vector3(cx + bodyW / 2 - 0.2, bodyGap, cz);
+  g.add(bentLead(exitLeft, p0.x, p0.z, bt));
+  g.add(solderBlob(p0.x, p0.z, bt));
+  g.add(bentLead(exitRight, p1.x, p1.z, bt));
+  g.add(solderBlob(p1.x, p1.z, bt));
+
+  return g;
+}
+
+// ============================================================
+// LDR — Disc with transparent photosensitive window
+// ============================================================
+
+function buildLDR(p: Record<string, number | string>, pads: PadPos3D[], bt: number): THREE.Group {
+  const g = new THREE.Group();
+  const dia = (p.diameter as number) || 5;
+
+  const p0 = pads[0] ?? { x: 0, z: 0 };
+  const p1 = pads[1] ?? { x: 5.08, z: 0 };
+  const cx = (p0.x + p1.x) / 2;
+  const cz = (p0.z + p1.z) / 2;
+  const bodyGap = 1.2;
+
+  // Body disc (dark red ceramic)
+  const bodyGeom = new THREE.CylinderGeometry(dia / 2, dia / 2, 2.5, 20);
+  const body = new THREE.Mesh(bodyGeom, mat.ldrBody);
+  body.position.set(cx, bodyGap + 1.25, cz);
+  g.add(body);
+
+  // Photosensitive window (transparent reddish disc on top)
+  const windowGeom = new THREE.CylinderGeometry(dia / 2 - 0.5, dia / 2 - 0.5, 0.5, 20);
+  const window = new THREE.Mesh(windowGeom, mat.ldrWindow);
+  window.position.set(cx, bodyGap + 2.75, cz);
+  g.add(window);
+
+  // Serpentine pattern on window (simplified as a cross)
+  const patternMat = new THREE.MeshStandardMaterial({ color: '#660000', roughness: 0.5 });
+  for (const rot of [0, Math.PI / 2]) {
+    const lineGeom = new THREE.BoxGeometry(dia * 0.6, 0.08, 0.3);
+    const line = new THREE.Mesh(lineGeom, patternMat);
+    line.position.set(cx, bodyGap + 3.0, cz);
+    line.rotation.y = rot;
+    g.add(line);
+  }
+
+  // Bent leads from body bottom
+  const exitY = bodyGap;
+  g.add(bentLead(new THREE.Vector3(cx - dia * 0.25, exitY, cz), p0.x, p0.z, bt));
+  g.add(solderBlob(p0.x, p0.z, bt));
+  g.add(bentLead(new THREE.Vector3(cx + dia * 0.25, exitY, cz), p1.x, p1.z, bt));
+  g.add(solderBlob(p1.x, p1.z, bt));
+
+  return g;
+}
+
+// ============================================================
+// NTC Bead — Small disc/bead thermistor
+// ============================================================
+
+function buildNTCBead(p: Record<string, number | string>, pads: PadPos3D[], bt: number): THREE.Group {
+  const g = new THREE.Group();
+  const dia = (p.diameter as number) || 4;
+
+  const p0 = pads[0] ?? { x: 0, z: 0 };
+  const p1 = pads[1] ?? { x: 5.08, z: 0 };
+  const cx = (p0.x + p1.x) / 2;
+  const cz = (p0.z + p1.z) / 2;
+  const bodyGap = 1.0;
+
+  // Small bead body (sphere-like disc)
+  const bodyGeom = new THREE.SphereGeometry(dia / 2, 16, 12);
+  const body = new THREE.Mesh(bodyGeom, mat.ntcBody);
+  body.position.set(cx, bodyGap + dia / 2, cz);
+  body.scale.set(1, 0.7, 1);
+  g.add(body);
+
+  // Bent leads
+  const exitY = bodyGap;
+  g.add(bentLead(new THREE.Vector3(cx - dia * 0.3, exitY, cz), p0.x, p0.z, bt));
+  g.add(solderBlob(p0.x, p0.z, bt));
+  g.add(bentLead(new THREE.Vector3(cx + dia * 0.3, exitY, cz), p1.x, p1.z, bt));
+  g.add(solderBlob(p1.x, p1.z, bt));
+
+  return g;
+}
+
+// ============================================================
+// Trimmer Potentiometer — Small top-adjust trimmer
+// ============================================================
+
+function buildTrimmer(p: Record<string, number | string>, pads: PadPos3D[], bt: number): THREE.Group {
+  const g = new THREE.Group();
+  const size = (p.size as number) || 6.5;
+  const h = (p.height as number) || 4.5;
+
+  const c = padCenter(pads);
+  const bodyGap = 0.5;
+
+  // Square body
+  const bodyGeom = new THREE.BoxGeometry(size, h, size);
+  const body = new THREE.Mesh(bodyGeom, mat.trimmerBody);
+  body.position.set(c.x, bodyGap + h / 2, c.z);
+  g.add(body);
+
+  // Adjustment screw on top (circular with slot)
+  const screwGeom = new THREE.CylinderGeometry(size * 0.3, size * 0.3, 0.8, 16);
+  const screw = new THREE.Mesh(screwGeom, mat.trimmerSlot);
+  screw.position.set(c.x, bodyGap + h + 0.4, c.z);
+  g.add(screw);
+
+  // Screw slot
+  const slotGeom = new THREE.BoxGeometry(size * 0.4, 0.15, 0.6);
+  const slot = new THREE.Mesh(slotGeom, mat.plastic);
+  slot.position.set(c.x, bodyGap + h + 0.8, c.z);
+  g.add(slot);
+
+  // Leads
+  for (const pad of pads) {
+    const dx = Math.abs(pad.x - c.x);
+    const dz = Math.abs(pad.z - c.z);
+    if (dx < 0.5 && dz < 0.5) {
+      g.add(straightLead(bodyGap, pad.x, pad.z, bt));
+    } else {
+      g.add(bentLead(new THREE.Vector3(pad.x, bodyGap + 0.5, pad.z), pad.x, pad.z, bt));
+    }
+    g.add(solderBlob(pad.x, pad.z, bt));
+  }
+
+  return g;
+}
+
+// ============================================================
+// Varistor — Disc with leads (like ceramic cap but with marking)
+// ============================================================
+
+function buildVaristor(p: Record<string, number | string>, pads: PadPos3D[], bt: number): THREE.Group {
+  const g = new THREE.Group();
+  const dia = (p.diameter as number) || 7;
+  const thickness = (p.thickness as number) || 4;
+
+  const p0 = pads[0] ?? { x: 0, z: 0 };
+  const p1 = pads[1] ?? { x: 5.08, z: 0 };
+  const cx = (p0.x + p1.x) / 2;
+  const cz = (p0.z + p1.z) / 2;
+  const elev = 1.5;
+  const by = elev + dia / 2;
+
+  // Disc body
+  const bodyGeom = new THREE.CylinderGeometry(dia / 2, dia / 2, thickness, 20);
+  bodyGeom.rotateX(Math.PI / 2);
+  const body = new THREE.Mesh(bodyGeom, mat.varistorBody);
+  body.position.set(cx, by, cz);
+  g.add(body);
+
+  // Marking dot on face
+  const dotGeom = new THREE.CircleGeometry(dia / 2 - 1, 16);
+  const dotMat = new THREE.MeshStandardMaterial({ color: '#102040', roughness: 0.5 });
+  const dot = new THREE.Mesh(dotGeom, dotMat);
+  dot.position.set(cx, by, cz + thickness / 2 + 0.05);
+  g.add(dot);
+
+  // Leads
+  const exitY = by - dia / 2 * 0.85;
+  g.add(bentLead(new THREE.Vector3(cx - dia * 0.3, exitY, cz), p0.x, p0.z, bt));
+  g.add(solderBlob(p0.x, p0.z, bt));
+  g.add(bentLead(new THREE.Vector3(cx + dia * 0.3, exitY, cz), p1.x, p1.z, bt));
+  g.add(solderBlob(p1.x, p1.z, bt));
+
+  return g;
+}
+
+// ============================================================
+// Relay — Simple rectangular box
+// ============================================================
+
+function buildRelay(p: Record<string, number | string>, pads: PadPos3D[], bt: number): THREE.Group {
+  const g = new THREE.Group();
+
+  const bodyW = (p.bodyWidth as number) || 19;
+  const bodyH = (p.bodyHeight as number) || 15;
+  const bodyD = (p.bodyDepth as number) || 15;
+
+  // Centre over footprint bounds
+  const xs = pads.map(pp => pp.x);
+  const zs = pads.map(pp => pp.z);
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+  const cz = (Math.min(...zs) + Math.max(...zs)) / 2;
+  const bodyGap = 0.3;
+
+  // Main body
+  const bodyGeom = new THREE.BoxGeometry(bodyW, bodyH, bodyD);
+  const body = new THREE.Mesh(bodyGeom, mat.relayBody);
+  body.position.set(cx, bodyGap + bodyH / 2, cz);
+  g.add(body);
+
+  // Label strip on top
+  const labelGeom = new THREE.BoxGeometry(bodyW * 0.7, 0.15, bodyD * 0.35);
+  const label = new THREE.Mesh(labelGeom, mat.relayLabel);
+  label.position.set(cx, bodyGap + bodyH + 0.08, cz);
+  g.add(label);
+
+  // Pin-1 dot
+  const dotGeom = new THREE.CircleGeometry(0.6, 8);
+  const dot = new THREE.Mesh(dotGeom, mat.whiteStripe);
+  dot.position.set(cx - bodyW / 2 + 1.5, bodyGap + bodyH + 0.1, cz - bodyD / 2 + 1.5);
+  dot.rotation.x = -Math.PI / 2;
+  g.add(dot);
+
+  // Leads
+  for (const pad of pads) {
+    g.add(bentLead(new THREE.Vector3(pad.x, bodyGap, pad.z), pad.x, pad.z, bt, LEAD_R * 1.2));
+    g.add(solderBlob(pad.x, pad.z, bt));
+  }
+
+  return g;
+}
+
+// ============================================================
+// Bridge Rectifier — 4-pin inline or square package
+// ============================================================
+
+function buildBridgeRectifier(p: Record<string, number | string>, pads: PadPos3D[], bt: number): THREE.Group {
+  const g = new THREE.Group();
+  const bodyW = (p.bodyWidth as number) || 8;
+  const bodyH = (p.bodyHeight as number) || 4;
+  const bodyD = (p.bodyDepth as number) || 8;
+
+  const c = padCenter(pads);
+  const bodyGap = 0.5;
+
+  // Body with rounded edges
+  const bodyGeom = new THREE.BoxGeometry(bodyW, bodyH, bodyD);
+  const body = new THREE.Mesh(bodyGeom, mat.bridgeBody);
+  body.position.set(c.x, bodyGap + bodyH / 2, c.z);
+  g.add(body);
+
+  // Plus mark on top
+  const plusH = new THREE.BoxGeometry(bodyW * 0.3, 0.15, 0.4);
+  const plusV = new THREE.BoxGeometry(0.4, 0.15, bodyW * 0.3);
+  const plusMat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.5 });
+  const pH = new THREE.Mesh(plusH, plusMat);
+  const pV = new THREE.Mesh(plusV, plusMat);
+  pH.position.set(c.x - bodyW * 0.25, bodyGap + bodyH + 0.08, c.z);
+  pV.position.set(c.x - bodyW * 0.25, bodyGap + bodyH + 0.08, c.z);
+  g.add(pH);
+  g.add(pV);
+
+  // Wave symbol (~) simplified as small arc mark on top
+  const waveMat = new THREE.MeshStandardMaterial({ color: '#cccccc', roughness: 0.5 });
+  const waveGeom = new THREE.BoxGeometry(0.5, 0.15, bodyW * 0.25);
+  const wave = new THREE.Mesh(waveGeom, waveMat);
+  wave.position.set(c.x + bodyW * 0.25, bodyGap + bodyH + 0.08, c.z);
+  g.add(wave);
+
+  // Leads
+  addStraightLeads(g, pads, bodyGap, bt);
+
+  return g;
+}
+
+// ============================================================
+// Fuse — Cylindrical glass body with metal end caps
+// ============================================================
+
+function buildFuse(p: Record<string, number | string>, pads: PadPos3D[], bt: number): THREE.Group {
+  const g = new THREE.Group();
+  const bodyLen = (p.bodyLength as number) || 8;
+  const bodyDia = (p.bodyDiameter as number) || 3;
+
+  const p0 = pads[0] ?? { x: 0, z: 0 };
+  const p1 = pads[1] ?? { x: 10.16, z: 0 };
+  const cx = (p0.x + p1.x) / 2;
+  const cz = (p0.z + p1.z) / 2;
+  const clearance = 1.5;
+  const by = clearance + bodyDia / 2;
+
+  // Glass body (transparent cylinder)
+  const bodyGeom = new THREE.CylinderGeometry(bodyDia / 2, bodyDia / 2, bodyLen - 3, 16);
+  bodyGeom.rotateZ(Math.PI / 2);
+  const body = new THREE.Mesh(bodyGeom, mat.fuseBody);
+  body.position.set(cx, by, cz);
+  g.add(body);
+
+  // Metal end caps
+  for (const sign of [-1, 1]) {
+    const capGeom = new THREE.CylinderGeometry(bodyDia / 2 + 0.2, bodyDia / 2 + 0.2, 1.5, 12);
+    capGeom.rotateZ(Math.PI / 2);
+    const cap = new THREE.Mesh(capGeom, mat.fuseCap);
+    cap.position.set(cx + sign * (bodyLen / 2 - 0.75), by, cz);
+    g.add(cap);
+  }
+
+  // Internal wire (thin line through center)
+  const wireGeom = new THREE.CylinderGeometry(0.1, 0.1, bodyLen - 4, 6);
+  wireGeom.rotateZ(Math.PI / 2);
+  const wire = new THREE.Mesh(wireGeom, mat.fuseWire);
+  wire.position.set(cx, by, cz);
+  g.add(wire);
+
+  // Bent leads
+  g.add(bentLead(new THREE.Vector3(cx - bodyLen / 2, by, cz), p0.x, p0.z, bt, LEAD_R));
+  g.add(solderBlob(p0.x, p0.z, bt));
+  g.add(bentLead(new THREE.Vector3(cx + bodyLen / 2, by, cz), p1.x, p1.z, bt, LEAD_R));
+  g.add(solderBlob(p1.x, p1.z, bt));
+
+  return g;
+}
+
+// ============================================================
 // Placeholder
 // ============================================================
 

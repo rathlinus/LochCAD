@@ -41,9 +41,11 @@ export function getComponentById(id: string, customComponents?: ComponentDefinit
  */
 const TWO_PIN_ADJUSTABLE = new Set([
   'resistor_axial', 'capacitor_ceramic', 'capacitor_electrolytic',
+  'capacitor_electrolytic_large', 'capacitor_film', 'capacitor_film_large',
+  'capacitor_tantalum', 'capacitor_mlcc',
   'inductor', 'diode', 'crystal', 'switch_spst',
   'zener_diode', 'schottky_diode', 'buzzer',
-  'ldr_photoresistor', 'ntc_thermistor',
+  'ldr_photoresistor', 'ntc_thermistor', 'varistor', 'fuse_holder',
 ]);
 
 /**
@@ -271,6 +273,138 @@ function createCapacitors(): ComponentDefinition[] {
       pinMapping: { '1': '1', '2': '2' },
       spice: { template: 'C{ref} {1} {2} {value}' },
       defaultProperties: { value: '1000µF', voltage: '25V' },
+      isBuiltIn: true,
+    },
+    // ---- Film / Box Capacitor ----
+    {
+      id: 'capacitor_film',
+      name: 'Folienkondensator',
+      category: 'Capacitors',
+      description: 'Folienkondensator (MKT/MKP), Rastermaß 10mm',
+      keywords: ['capacitor', 'film', 'folie', 'MKT', 'MKP', 'polyester', 'box'],
+      symbol: {
+        graphics: [
+          { type: 'line', start: { x: -10, y: -12 }, end: { x: -10, y: 12 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'line', start: { x: -4, y: -12 }, end: { x: -4, y: 12 }, stroke: '#2176B7', strokeWidth: 2 },
+        ],
+        pins: [
+          { number: '1', name: '1', position: { x: -40, y: 0 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '2', name: '2', position: { x: 40, y: 0 }, length: 44, direction: 180, electricalType: 'passive' },
+        ],
+      },
+      footprint: {
+        type: 'through_hole',
+        pads: [
+          { number: '1', gridPosition: { col: 0, row: 0 }, shape: 'circle' },
+          { number: '2', gridPosition: { col: 4, row: 0 }, shape: 'circle' },
+        ],
+        silkscreen: [
+          { type: 'rectangle', start: { col: 1, row: 0 }, end: { col: 3, row: 0 } },
+        ],
+        spanHoles: { col: 5, row: 3 },
+      },
+      model3d: { type: 'parametric', shape: 'capacitor_film', params: { bodyWidth: 7, bodyHeight: 7.5, bodyDepth: 3.5 } },
+      pinMapping: { '1': '1', '2': '2' },
+      spice: { template: 'C{ref} {1} {2} {value}' },
+      defaultProperties: { value: '100nF', voltage: '63V' },
+      isBuiltIn: true,
+    },
+    {
+      id: 'capacitor_film_large',
+      name: 'Folienkondensator (groß)',
+      category: 'Capacitors',
+      description: 'Großer Folienkondensator (MKP), Rastermaß 15mm',
+      keywords: ['capacitor', 'film', 'MKP', 'large', 'power', 'box', 'folie'],
+      symbol: {
+        graphics: [
+          { type: 'line', start: { x: -10, y: -12 }, end: { x: -10, y: 12 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'line', start: { x: -4, y: -12 }, end: { x: -4, y: 12 }, stroke: '#2176B7', strokeWidth: 2 },
+        ],
+        pins: [
+          { number: '1', name: '1', position: { x: -40, y: 0 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '2', name: '2', position: { x: 40, y: 0 }, length: 44, direction: 180, electricalType: 'passive' },
+        ],
+      },
+      footprint: {
+        type: 'through_hole',
+        pads: [
+          { number: '1', gridPosition: { col: 0, row: 0 }, shape: 'circle' },
+          { number: '2', gridPosition: { col: 6, row: 0 }, shape: 'circle' },
+        ],
+        silkscreen: [
+          { type: 'rectangle', start: { col: 1, row: 0 }, end: { col: 5, row: 0 } },
+        ],
+        spanHoles: { col: 7, row: 4 },
+      },
+      model3d: { type: 'parametric', shape: 'capacitor_film', params: { bodyWidth: 11, bodyHeight: 11, bodyDepth: 5 } },
+      pinMapping: { '1': '1', '2': '2' },
+      spice: { template: 'C{ref} {1} {2} {value}' },
+      defaultProperties: { value: '1µF', voltage: '400V' },
+      isBuiltIn: true,
+    },
+    // ---- Tantalum Capacitor ----
+    {
+      id: 'capacitor_tantalum',
+      name: 'Tantal-Kondensator',
+      category: 'Capacitors',
+      description: 'Tantal-Elektrolytkondensator (polarisiert)',
+      keywords: ['tantalum', 'tantal', 'capacitor', 'polarized', 'kondensator'],
+      symbol: {
+        graphics: [
+          { type: 'line', start: { x: -10, y: -12 }, end: { x: -10, y: 12 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'arc', center: { x: -1, y: 0 }, radius: 12, startAngle: -90, endAngle: 90, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'text', position: { x: -16, y: -8 }, text: '+', fontSize: 10, stroke: '#2176B7' },
+        ],
+        pins: [
+          { number: '1', name: '+', position: { x: -40, y: 0 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '2', name: '-', position: { x: 40, y: 0 }, length: 41, direction: 180, electricalType: 'passive' },
+        ],
+      },
+      footprint: {
+        type: 'through_hole',
+        pads: [
+          { number: '1', gridPosition: { col: 0, row: 0 }, shape: 'square' },
+          { number: '2', gridPosition: { col: 2, row: 0 }, shape: 'circle' },
+        ],
+        silkscreen: [],
+        spanHoles: { col: 3, row: 2 },
+      },
+      model3d: { type: 'parametric', shape: 'capacitor_tantalum', params: { bodyWidth: 4, bodyHeight: 5, bodyDepth: 2.5 } },
+      pinMapping: { '1': '1', '2': '2' },
+      spice: { template: 'C{ref} {1} {2} {value}' },
+      defaultProperties: { value: '10µF', voltage: '16V' },
+      isBuiltIn: true,
+    },
+    // ---- MLCC Radial Capacitor ----
+    {
+      id: 'capacitor_mlcc',
+      name: 'MLCC (radial)',
+      category: 'Capacitors',
+      description: 'Vielschicht-Keramikkondensator, radiale Bauform',
+      keywords: ['mlcc', 'multilayer', 'ceramic', 'capacitor', 'vielschicht', 'SMD', 'radial'],
+      symbol: {
+        graphics: [
+          { type: 'line', start: { x: -10, y: -12 }, end: { x: -10, y: 12 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'line', start: { x: -4, y: -12 }, end: { x: -4, y: 12 }, stroke: '#2176B7', strokeWidth: 2 },
+        ],
+        pins: [
+          { number: '1', name: '1', position: { x: -40, y: 0 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '2', name: '2', position: { x: 40, y: 0 }, length: 44, direction: 180, electricalType: 'passive' },
+        ],
+      },
+      footprint: {
+        type: 'through_hole',
+        pads: [
+          { number: '1', gridPosition: { col: 0, row: 0 }, shape: 'circle' },
+          { number: '2', gridPosition: { col: 1, row: 0 }, shape: 'circle' },
+        ],
+        silkscreen: [],
+        spanHoles: { col: 2, row: 1 },
+      },
+      model3d: { type: 'parametric', shape: 'capacitor_mlcc', params: { bodyWidth: 3.2, bodyHeight: 4, bodyDepth: 1.6 } },
+      pinMapping: { '1': '1', '2': '2' },
+      spice: { template: 'C{ref} {1} {2} {value}' },
+      defaultProperties: { value: '100nF', voltage: '50V' },
       isBuiltIn: true,
     },
   ];
@@ -1556,7 +1690,7 @@ function createMiscComponents(): ComponentDefinition[] {
         silkscreen: [],
         spanHoles: { col: 3, row: 2 },
       },
-      model3d: { type: 'parametric', shape: 'capacitor_ceramic', params: { diameter: 5, thickness: 2 } },
+      model3d: { type: 'parametric', shape: 'ldr', params: { diameter: 5 } },
       pinMapping: { '1': '1', '2': '2' },
       spice: { template: 'R{ref} {1} {2} {value}' },
       defaultProperties: { value: '10kΩ (hell)' },
@@ -1588,7 +1722,7 @@ function createMiscComponents(): ComponentDefinition[] {
         silkscreen: [],
         spanHoles: { col: 3, row: 1 },
       },
-      model3d: { type: 'parametric', shape: 'capacitor_ceramic', params: { diameter: 4, thickness: 2.5 } },
+      model3d: { type: 'parametric', shape: 'ntc_bead', params: { diameter: 4 } },
       pinMapping: { '1': '1', '2': '2' },
       spice: { template: 'R{ref} {1} {2} {value}' },
       defaultProperties: { value: '10kΩ @ 25°C' },
@@ -1619,7 +1753,7 @@ function createMiscComponents(): ComponentDefinition[] {
         silkscreen: [],
         spanHoles: { col: 5, row: 1 },
       },
-      model3d: { type: 'parametric', shape: 'resistor_axial', params: { bodyLength: 8, bodyDiameter: 3, leadDiameter: 0.6, leadSpacing: 10.16 } },
+      model3d: { type: 'parametric', shape: 'fuse', params: { bodyLength: 8, bodyDiameter: 3 } },
       pinMapping: { '1': '1', '2': '2' },
       defaultProperties: { value: '1A' },
       isBuiltIn: true,
@@ -1656,6 +1790,148 @@ function createMiscComponents(): ComponentDefinition[] {
       model3d: { type: 'parametric', shape: 'transistor_to92', params: { bodyWidth: 5, bodyHeight: 5 } },
       pinMapping: { '1': '1', '2': '2', '3': '3' },
       defaultProperties: { value: 'TSOP1738' },
+      isBuiltIn: true,
+    },
+    // ---- Varistor ----
+    {
+      id: 'varistor',
+      name: 'Varistor (MOV)',
+      category: 'Misc',
+      description: 'Metalloxid-Varistor für Überspannungsschutz',
+      keywords: ['varistor', 'MOV', 'surge', 'protection', 'überspannung'],
+      symbol: {
+        graphics: [
+          { type: 'line', start: { x: -10, y: -12 }, end: { x: -10, y: 12 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'line', start: { x: -4, y: -12 }, end: { x: -4, y: 12 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'line', start: { x: -18, y: 10 }, end: { x: 8, y: -10 }, stroke: '#2176B7', strokeWidth: 1.5 },
+        ],
+        pins: [
+          { number: '1', name: '1', position: { x: -40, y: 0 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '2', name: '2', position: { x: 40, y: 0 }, length: 44, direction: 180, electricalType: 'passive' },
+        ],
+      },
+      footprint: {
+        type: 'through_hole',
+        pads: [
+          { number: '1', gridPosition: { col: 0, row: 0 }, shape: 'circle' },
+          { number: '2', gridPosition: { col: 3, row: 0 }, shape: 'circle' },
+        ],
+        silkscreen: [],
+        spanHoles: { col: 4, row: 2 },
+      },
+      model3d: { type: 'parametric', shape: 'varistor', params: { diameter: 7, thickness: 4 } },
+      pinMapping: { '1': '1', '2': '2' },
+      defaultProperties: { value: '275V' },
+      isBuiltIn: true,
+    },
+    // ---- Bridge Rectifier ----
+    {
+      id: 'bridge_rectifier',
+      name: 'Brückengleichrichter',
+      category: 'Misc',
+      description: 'Brückengleichrichter 4-Pin (z.B. KBP206)',
+      keywords: ['bridge', 'rectifier', 'gleichrichter', 'brücke', 'diode'],
+      symbol: {
+        graphics: [
+          { type: 'rectangle', start: { x: -20, y: -20 }, end: { x: 20, y: 20 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'text', position: { x: 0, y: 0 }, text: '~ +', fontSize: 8, anchor: 'middle', stroke: '#ffffff' },
+        ],
+        pins: [
+          { number: '1', name: '+', position: { x: 0, y: -40 }, length: 20, direction: 90, electricalType: 'passive' },
+          { number: '2', name: 'AC1', position: { x: -40, y: 0 }, length: 20, direction: 0, electricalType: 'passive' },
+          { number: '3', name: '-', position: { x: 0, y: 40 }, length: 20, direction: 270, electricalType: 'passive' },
+          { number: '4', name: 'AC2', position: { x: 40, y: 0 }, length: 20, direction: 180, electricalType: 'passive' },
+        ],
+      },
+      footprint: {
+        type: 'through_hole',
+        pads: [
+          { number: '1', gridPosition: { col: 0, row: 0 }, shape: 'square' },
+          { number: '2', gridPosition: { col: 1, row: 0 }, shape: 'circle' },
+          { number: '3', gridPosition: { col: 2, row: 0 }, shape: 'circle' },
+          { number: '4', gridPosition: { col: 3, row: 0 }, shape: 'circle' },
+        ],
+        silkscreen: [],
+        spanHoles: { col: 4, row: 2 },
+      },
+      model3d: { type: 'parametric', shape: 'bridge_rectifier', params: { bodyWidth: 8, bodyHeight: 4, bodyDepth: 8 } },
+      pinMapping: { '1': '1', '2': '2', '3': '3', '4': '4' },
+      spice: { template: '* {ref} Bridge Rectifier\nD{ref}_1 {2} {1} D_DEFAULT\nD{ref}_2 {4} {1} D_DEFAULT\nD{ref}_3 {3} {2} D_DEFAULT\nD{ref}_4 {3} {4} D_DEFAULT' },
+      defaultProperties: { value: 'KBP206' },
+      isBuiltIn: true,
+    },
+    // ---- Relay ----
+    {
+      id: 'relay_spdt',
+      name: 'Relais (SPDT)',
+      category: 'Misc',
+      description: 'Relais SPDT, 5-Pin (z.B. SRD-05VDC)',
+      keywords: ['relay', 'relais', 'SPDT', 'coil', 'switch'],
+      symbol: {
+        graphics: [
+          { type: 'rectangle', start: { x: -30, y: -30 }, end: { x: 30, y: 30 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'text', position: { x: 0, y: 0 }, text: 'K', fontSize: 12, anchor: 'middle', stroke: '#ffffff' },
+        ],
+        pins: [
+          { number: '1', name: 'COIL+', position: { x: -60, y: -15 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '2', name: 'COIL-', position: { x: -60, y: 15 }, length: 30, direction: 0, electricalType: 'passive' },
+          { number: '3', name: 'COM', position: { x: 60, y: 0 }, length: 30, direction: 180, electricalType: 'passive' },
+          { number: '4', name: 'NO', position: { x: 60, y: -20 }, length: 30, direction: 180, electricalType: 'passive' },
+          { number: '5', name: 'NC', position: { x: 60, y: 20 }, length: 30, direction: 180, electricalType: 'passive' },
+        ],
+      },
+      footprint: {
+        type: 'through_hole',
+        pads: [
+          { number: '1', gridPosition: { col: 0, row: 0 }, shape: 'square' },
+          { number: '2', gridPosition: { col: 0, row: 4 }, shape: 'circle' },
+          { number: '3', gridPosition: { col: 6, row: 2 }, shape: 'circle' },
+          { number: '4', gridPosition: { col: 6, row: 0 }, shape: 'circle' },
+          { number: '5', gridPosition: { col: 6, row: 4 }, shape: 'circle' },
+        ],
+        silkscreen: [
+          { type: 'rectangle', start: { col: 0, row: 0 }, end: { col: 6, row: 4 } },
+        ],
+        spanHoles: { col: 7, row: 5 },
+      },
+      model3d: { type: 'parametric', shape: 'relay', params: { bodyWidth: 19, bodyHeight: 15, bodyDepth: 15 } },
+      pinMapping: { '1': '1', '2': '2', '3': '3', '4': '4', '5': '5' },
+      spice: { template: '* {ref} Relay SPDT\nR{ref}_coil {1} {2} 70\nS{ref} {4} {3} {1} {2} SWMOD' },
+      defaultProperties: { value: 'SRD-05VDC' },
+      isBuiltIn: true,
+    },
+    // ---- Trimmer Potentiometer ----
+    {
+      id: 'trimmer_pot',
+      name: 'Trimmer',
+      category: 'Resistors',
+      description: 'Einstellbarer Trimmer-Potentiometer',
+      keywords: ['trimmer', 'potentiometer', 'variable', 'einstellbar', 'trimpot'],
+      symbol: {
+        graphics: [
+          { type: 'rectangle', start: { x: -20, y: -7 }, end: { x: 20, y: 7 }, stroke: '#2176B7', strokeWidth: 2 },
+          { type: 'polyline', points: [{ x: -5, y: -15 }, { x: 0, y: -7 }, { x: 5, y: -15 }], stroke: '#2176B7', strokeWidth: 2, closed: true, fill: '#2176B7' },
+        ],
+        pins: [
+          { number: '1', name: '1', position: { x: -40, y: 0 }, length: 20, direction: 0, electricalType: 'passive' },
+          { number: '2', name: 'W', position: { x: 0, y: -30 }, length: 15, direction: 270, electricalType: 'passive' },
+          { number: '3', name: '3', position: { x: 40, y: 0 }, length: 20, direction: 180, electricalType: 'passive' },
+        ],
+      },
+      footprint: {
+        type: 'through_hole',
+        pads: [
+          { number: '1', gridPosition: { col: 0, row: 0 }, shape: 'circle' },
+          { number: '2', gridPosition: { col: 1, row: 1 }, shape: 'circle' },
+          { number: '3', gridPosition: { col: 2, row: 0 }, shape: 'circle' },
+        ],
+        silkscreen: [],
+        spanHoles: { col: 3, row: 2 },
+      },
+      model3d: { type: 'parametric', shape: 'trimmer', params: { size: 6.5, height: 4.5 } },
+      pinMapping: { '1': '1', '2': '2', '3': '3' },
+      spice: { template: 'R{ref}_1 {1} {2} {value}\nR{ref}_2 {2} {3} {value}' },
+      defaultProperties: { value: '10kΩ' },
       isBuiltIn: true,
     },
   ];

@@ -1043,8 +1043,8 @@ export default function PerfboardEditor() {
             const padRows = maxRow - minRow + 1;
             const extraC = spanC - padCols;
             const extraR = spanR - padRows;
-            if (extraC > 0) { minCol -= Math.floor(extraC / 2); maxCol += Math.ceil(extraC / 2); }
-            if (extraR > 0) { minRow -= Math.floor(extraR / 2); maxRow += Math.ceil(extraR / 2); }
+            if (extraC > 0) { minCol -= extraC / 2; maxCol += extraC / 2; }
+            if (extraR > 0) { minRow -= extraR / 2; maxRow += extraR / 2; }
 
             return (
               <Group>
@@ -1319,8 +1319,8 @@ const PerfboardComponentRenderer: React.FC<{
         const padR = rMax - rMin + 1;
         const eC = spanC - padC;
         const eR = spanR - padR;
-        if (eC > 0) { cMin -= Math.floor(eC / 2); cMax += Math.ceil(eC / 2); }
-        if (eR > 0) { rMin -= Math.floor(eR / 2); rMax += Math.ceil(eR / 2); }
+        if (eC > 0) { cMin -= eC / 2; cMax += eC / 2; }
+        if (eR > 0) { rMin -= eR / 2; rMax += eR / 2; }
 
         const minPos = gridToPixel({ col: cMin, row: rMin });
         const maxPos = gridToPixel({ col: cMax, row: rMax });
