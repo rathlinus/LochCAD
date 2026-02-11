@@ -48,6 +48,31 @@ const mat = {
   ldrBody:      new THREE.MeshStandardMaterial({ color: '#8B0000', roughness: 0.5, metalness: 0.1 }),
   ldrWindow:    new THREE.MeshStandardMaterial({ color: '#cc4444', roughness: 0.3, transparent: true, opacity: 0.6 }),
   ntcBody:      new THREE.MeshStandardMaterial({ color: '#003366', roughness: 0.5 }),
+  // Film / box capacitor
+  filmCapBody:  new THREE.MeshStandardMaterial({ color: '#b22222', roughness: 0.5, metalness: 0.05 }),
+  filmCapText:  new THREE.MeshStandardMaterial({ color: '#ffcc00', roughness: 0.5 }),
+  // Tantalum capacitor
+  tantalumBody: new THREE.MeshStandardMaterial({ color: '#d4a017', roughness: 0.6, metalness: 0.1 }),
+  tantalumMark: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.5 }),
+  // MLCC
+  mlccBody:     new THREE.MeshStandardMaterial({ color: '#1a5276', roughness: 0.5, metalness: 0.1 }),
+  // Varistor
+  varistorBody: new THREE.MeshStandardMaterial({ color: '#1565c0', roughness: 0.5 }),
+  // Relay
+  relayBody:    new THREE.MeshStandardMaterial({ color: '#1a1a2e', roughness: 0.4, metalness: 0.05 }),
+  relayLabel:   new THREE.MeshStandardMaterial({ color: '#5555aa', roughness: 0.5 }),
+  // Fuse
+  fuseBody:     new THREE.MeshStandardMaterial({ color: '#e8e8e8', roughness: 0.2, transparent: true, opacity: 0.7 }),
+  fuseCap:      new THREE.MeshStandardMaterial({ color: '#c0c0c0', roughness: 0.3, metalness: 0.7 }),
+  fuseWire:     new THREE.MeshStandardMaterial({ color: '#888888', roughness: 0.4, metalness: 0.5 }),
+  // Trimmer potentiometer
+  trimmerBody:  new THREE.MeshStandardMaterial({ color: '#1565c0', roughness: 0.5 }),
+  trimmerSlot:  new THREE.MeshStandardMaterial({ color: '#dddddd', roughness: 0.3, metalness: 0.5 }),
+  // Bridge rectifier
+  bridgeBody:   new THREE.MeshStandardMaterial({ color: '#1a1a1a', roughness: 0.4 }),
+  // Resistor box
+  resistorBoxBody: new THREE.MeshStandardMaterial({ color: '#1a3d5c', roughness: 0.5 }),
+  resistorBoxText: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.5 }),
 };
 
 /** Digit → color for resistor bands (0=black … 9=white) */
@@ -160,21 +185,35 @@ export function generate3DComponent(
   const { shape, params } = model;
   switch (shape) {
     case 'resistor_axial':         return buildResistorAxial(params, pads, boardThick, extra);
+    case 'resistor_box':           return buildResistorBox(params, pads, boardThick);
     case 'capacitor_ceramic':      return buildCeramicCap(params, pads, boardThick);
     case 'capacitor_electrolytic': return buildElcoCap(params, pads, boardThick);
+    case 'capacitor_film':         return buildFilmCap(params, pads, boardThick);
+    case 'capacitor_tantalum':     return buildTantalumCap(params, pads, boardThick);
+    case 'capacitor_mlcc':         return buildMLCCCap(params, pads, boardThick);
     case 'led':                    return buildLED(params, pads, boardThick);
+    case 'led_3mm':                return buildLED({ ...params, diameter: 3, height: 5.5 }, pads, boardThick);
     case 'diode':                  return buildDiode(params, pads, boardThick);
     case 'transistor_to92':        return buildTO92(params, pads, boardThick);
+    case 'transistor_to220':       return buildTO220(params, pads, boardThick);
     case 'ic_dip':                 return buildDIP(params, pads, boardThick);
     case 'pin_header':             return buildPinHeader(params, pads, boardThick);
+    case 'connector':              return buildPinHeader(params, pads, boardThick);
     case 'crystal':                return buildCrystal(params, pads, boardThick);
     case 'switch':                 return buildSwitch(params, pads, boardThick);
     case 'potentiometer':          return buildPotentiometer(params, pads, boardThick);
+    case 'trimmer':                return buildTrimmer(params, pads, boardThick);
     case 'inductor':               return buildInductor(params, pads, boardThick);
     case 'voltage_regulator_to220': return buildTO220(params, pads, boardThick);
     case 'buzzer':                  return buildBuzzer(params, pads, boardThick);
     case 'screw_terminal':          return buildScrewTerminal(params, pads, boardThick);
     case 'tactile_switch':          return buildTactileSwitch(params, pads, boardThick);
+    case 'relay':                   return buildRelay(params, pads, boardThick);
+    case 'bridge_rectifier':        return buildBridgeRectifier(params, pads, boardThick);
+    case 'varistor':                return buildVaristor(params, pads, boardThick);
+    case 'fuse':                    return buildFuse(params, pads, boardThick);
+    case 'ldr':                     return buildLDR(params, pads, boardThick);
+    case 'ntc_bead':                return buildNTCBead(params, pads, boardThick);
     default:                        return buildPlaceholder(pads, boardThick);
   }
 }

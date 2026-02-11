@@ -26,7 +26,7 @@ Dieses Projekt folgt dem [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.
 
 ### Bugs melden
 
-- Überprüfe zuerst, ob ein ähnliches [Issue](https://github.com/linusrath/LochCAD/issues) bereits existiert.
+- Überprüfe zuerst, ob ein ähnliches [Issue](https://github.com/rathlinus/LochCAD/issues) bereits existiert.
 - Erstelle ein neues Issue mit dem **Bug Report**-Template.
 - Beschreibe das Problem möglichst genau: Was passiert, was hast du erwartet, Schritte zum Reproduzieren.
 
@@ -60,7 +60,7 @@ Dieses Projekt folgt dem [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.
 ### Setup
 
 ```bash
-git clone https://github.com/linusrath/LochCAD.git
+git clone https://github.com/rathlinus/LochCAD.git
 cd LochCAD
 npm install
 npm run dev

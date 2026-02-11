@@ -55,7 +55,7 @@
 
 ```bash
 # Repository klonen
-git clone https://github.com/linusrath/LochCAD.git
+git clone https://github.com/rathlinus/LochCAD.git
 cd LochCAD
 
 # Abhängigkeiten installieren

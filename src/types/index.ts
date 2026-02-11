@@ -189,7 +189,10 @@ export type Model3DType =
   | 'capacitor_ceramic'
   | 'capacitor_electrolytic'
   | 'capacitor_film'
+  | 'capacitor_tantalum'
+  | 'capacitor_mlcc'
   | 'led'
+  | 'led_3mm'
   | 'diode'
   | 'transistor_to92'
   | 'transistor_to220'
@@ -197,6 +200,7 @@ export type Model3DType =
   | 'pin_header'
   | 'connector'
   | 'potentiometer'
+  | 'trimmer'
   | 'crystal'
   | 'inductor'
   | 'switch'
@@ -204,6 +208,12 @@ export type Model3DType =
   | 'buzzer'
   | 'screw_terminal'
   | 'tactile_switch'
+  | 'relay'
+  | 'bridge_rectifier'
+  | 'varistor'
+  | 'fuse'
+  | 'ldr'
+  | 'ntc_bead'
   | 'custom';
 
 export interface Model3DParametric {

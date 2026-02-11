@@ -7,10 +7,10 @@
   "homepage": "https://lochcad.de",
   "repository": {
     "type": "git",
-    "url": "https://github.com/linusrath/LochCAD.git"
+    "url": "https://github.com/rathlinus/LochCAD.git"
   },
   "bugs": {
-    "url": "https://github.com/linusrath/LochCAD/issues"
+    "url": "https://github.com/rathlinus/LochCAD/issues"
   },
   "keywords": [
     "eda",

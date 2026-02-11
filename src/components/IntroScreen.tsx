@@ -183,7 +183,7 @@ export function IntroScreen({ onClose }: { onClose: () => void }) {
         {/* Open Source Links */}
         <div className="mx-6 mb-3 flex gap-2">
           <a
-            href="https://github.com/linusrath/LochCAD"
+            href="https://github.com/rathlinus/LochCAD"
             target="_blank"
             rel="noopener noreferrer"
             className="flex-1 py-1.5 rounded border border-lochcad-panel/30 bg-lochcad-bg/50 hover:bg-lochcad-panel/25 text-[11px] text-lochcad-text-dim hover:text-lochcad-text transition-colors flex items-center justify-center gap-1.5"
@@ -192,7 +192,7 @@ export function IntroScreen({ onClose }: { onClose: () => void }) {
             GitHub
           </a>
           <a
-            href="https://linusrath.github.io/LochCAD/"
+            href="https://rathlinus.github.io/LochCAD/"
             target="_blank"
             rel="noopener noreferrer"
             className="flex-1 py-1.5 rounded border border-lochcad-panel/30 bg-lochcad-bg/50 hover:bg-lochcad-panel/25 text-[11px] text-lochcad-text-dim hover:text-lochcad-text transition-colors flex items-center justify-center gap-1.5"

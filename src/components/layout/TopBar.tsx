@@ -454,13 +454,13 @@ export function TopBar() {
       }},
       { separator: true, label: '' },
       { label: 'Dokumentation', icon: <FileText size={14} />, action: () => {
-        window.open('https://linusrath.github.io/LochCAD/', '_blank');
+        window.open('https://rathlinus.github.io/LochCAD/', '_blank');
       }},
       { label: 'GitHub Repository', icon: <Globe size={14} />, action: () => {
-        window.open('https://github.com/linusrath/LochCAD', '_blank');
+        window.open('https://github.com/rathlinus/LochCAD', '_blank');
       }},
       { label: 'Bug melden', icon: <AlertTriangle size={14} />, action: () => {
-        window.open('https://github.com/linusrath/LochCAD/issues/new?template=bug_report.md', '_blank');
+        window.open('https://github.com/rathlinus/LochCAD/issues/new?template=bug_report.md', '_blank');
       }},
       { separator: true, label: '' },
       { label: 'Über LochCAD', icon: <Info size={14} />, action: () => {
