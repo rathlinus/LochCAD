@@ -11,7 +11,7 @@ module.exports = {
     },
     {
       name: 'lochcad-collab',
-      script: 'server/collab-server.js',
+      script: 'server/collab-server.cjs',
       cwd: '/var/www/node/LochCAD',
       env: {
         NODE_ENV: 'production',
