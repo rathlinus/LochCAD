@@ -7,6 +7,8 @@ import { collabClient } from '@/lib/collab/client';
 import { startSync, stopSync } from '@/lib/collab/sync';
 import type { CollabUser, AwarenessState, ServerMessage } from '@/lib/collab/protocol';
 import { useAuthStore } from './authStore';
+import { useProjectManagerStore } from './projectManagerStore';
+import { useProjectStore } from './projectStore';
 import { v4 as uuid } from 'uuid';
 
 export interface RemotePeer {
@@ -42,6 +44,8 @@ interface CollabState {
 
 let _messageUnsub: (() => void) | null = null;
 let _awarenessInterval: ReturnType<typeof setInterval> | null = null;
+/** Project ID the user had open before joining a room */
+let _preJoinProjectId: string | null = null;
 
 export const useCollabStore = create<CollabState>((set, get) => ({
   connected: false,
@@ -64,6 +68,11 @@ export const useCollabStore = create<CollabState>((set, get) => ({
       useAuthStore.getState().openAuthModal();
       return;
     }
+
+    // Save current local project before switching to collab state
+    const pmStore = useProjectManagerStore.getState();
+    pmStore.saveCurrentProject();
+    _preJoinProjectId = useProjectStore.getState().project.id;
 
     set({ connecting: true, roomId });
 
@@ -140,6 +149,13 @@ export const useCollabStore = create<CollabState>((set, get) => ({
       peers: new Map(),
       localAwareness: {},
     });
+
+    // Restore the user's own project
+    if (_preJoinProjectId) {
+      const pmStore = useProjectManagerStore.getState();
+      pmStore.openProject(_preJoinProjectId);
+      _preJoinProjectId = null;
+    }
 
     // Clean URL
     const url = new URL(window.location.href);

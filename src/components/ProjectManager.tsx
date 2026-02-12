@@ -347,6 +347,14 @@ function ProjectCard({
           : 'border-lochcad-panel/30 bg-lochcad-surface hover:border-lochcad-panel/50 hover:bg-lochcad-bg/60'
       }`}
     >
+      {/* Perfboard thumbnail preview */}
+      <div
+        className="w-full h-[72px] bg-lochcad-bg/60 rounded-t-lg overflow-hidden cursor-pointer border-b border-lochcad-panel/20"
+        onClick={onOpen}
+      >
+        <PerfboardThumbnail projectId={entry.id} />
+      </div>
+
       <div className="p-3">
         {/* Row 1: Name + Actions */}
         <div className="flex items-center gap-2">
@@ -498,6 +506,125 @@ function ProjectCard({
         )}
       </div>
     </div>
+  );
+}
+
+// ============================================================
+// Perfboard Thumbnail — Mini canvas preview of the Lochraster
+// ============================================================
+function PerfboardThumbnail({ projectId }: { projectId: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Load project data from localStorage
+    let perfboard: any;
+    try {
+      const raw = localStorage.getItem(`lochcad-project-${projectId}`);
+      if (!raw) return;
+      const proj = JSON.parse(raw);
+      perfboard = proj?.perfboard;
+      if (!perfboard) return;
+    } catch {
+      return;
+    }
+
+    const w = canvas.width;
+    const h = canvas.height;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    ctx.scale(dpr, dpr);
+
+    const boardW = perfboard.width || 30;
+    const boardH = perfboard.height || 20;
+    const cols = boardW + 2;
+    const rows = boardH + 2;
+    const cellW = w / cols;
+    const cellH = h / rows;
+    const cell = Math.min(cellW, cellH);
+    const offX = (w - cols * cell) / 2;
+    const offY = (h - rows * cell) / 2;
+
+    // Board background
+    ctx.fillStyle = perfboard.boardType === 'stripboard' ? '#1a5c3a' : '#1a472a';
+    ctx.beginPath();
+    ctx.roundRect(offX + cell * 0.5, offY + cell * 0.5, boardW * cell, boardH * cell, 2);
+    ctx.fill();
+
+    // Holes
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    for (let c = 0; c < boardW; c++) {
+      for (let r = 0; r < boardH; r++) {
+        const cx = offX + (c + 1) * cell;
+        const cy = offY + (r + 1) * cell;
+        ctx.beginPath();
+        ctx.arc(cx, cy, cell * 0.15, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Connections
+    const conns = perfboard.connections || [];
+    for (const conn of conns) {
+      ctx.strokeStyle = conn.type === 'wire_bridge' ? '#5588cc' : conn.type === 'solder_bridge' ? '#b87333' : '#c87040';
+      ctx.lineWidth = Math.max(1, cell * 0.15);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      const fx = offX + (conn.from.col + 1) * cell;
+      const fy = offY + (conn.from.row + 1) * cell;
+      ctx.moveTo(fx, fy);
+      if (conn.waypoints) {
+        for (const wp of conn.waypoints) {
+          ctx.lineTo(offX + (wp.col + 1) * cell, offY + (wp.row + 1) * cell);
+        }
+      }
+      ctx.lineTo(offX + (conn.to.col + 1) * cell, offY + (conn.to.row + 1) * cell);
+      ctx.stroke();
+    }
+
+    // Components — draw as small colored rectangles
+    const comps = perfboard.components || [];
+    ctx.fillStyle = 'rgba(233, 69, 96, 0.35)';
+    ctx.strokeStyle = 'rgba(233, 69, 96, 0.6)';
+    ctx.lineWidth = Math.max(0.5, cell * 0.1);
+    for (const comp of comps) {
+      const cx = offX + (comp.gridPosition.col + 1) * cell;
+      const cy = offY + (comp.gridPosition.row + 1) * cell;
+      ctx.beginPath();
+      ctx.roundRect(cx - cell * 0.4, cy - cell * 0.4, cell * 0.8, cell * 0.8, 1);
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // Track cuts
+    const cuts = perfboard.trackCuts || [];
+    ctx.strokeStyle = '#ff4444';
+    ctx.lineWidth = Math.max(0.5, cell * 0.12);
+    for (const cut of cuts) {
+      const cx = offX + (cut.position.col + 1) * cell;
+      const cy = offY + (cut.position.row + 1) * cell;
+      ctx.beginPath();
+      ctx.moveTo(cx - cell * 0.25, cy - cell * 0.25);
+      ctx.lineTo(cx + cell * 0.25, cy + cell * 0.25);
+      ctx.moveTo(cx + cell * 0.25, cy - cell * 0.25);
+      ctx.lineTo(cx - cell * 0.25, cy + cell * 0.25);
+      ctx.stroke();
+    }
+  }, [projectId]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={160}
+      height={100}
+      className="w-full h-full rounded"
+      style={{ imageRendering: 'auto' }}
+    />
   );
 }
 

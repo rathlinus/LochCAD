@@ -211,10 +211,10 @@ export function Sidebar() {
           {/* Search */}
           <div className="p-2">
             <div className="relative">
-              <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-lochcad-text-dim" />
+              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-lochcad-text-dim pointer-events-none" />
               <input
                 ref={searchRef}
-                className="input w-full pl-7 pr-7 text-xs"
+                className="input w-full pl-8 pr-7 text-xs"
                 placeholder="Suche: Name, Kategorie, Wert..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}

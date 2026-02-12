@@ -7,7 +7,6 @@ import type { AutoLayoutMode } from '@/lib/engine/auto-layout';
 import {
   MousePointer2,
   Minus,
-  Component,
   Type,
   Circle,
   ArrowRightLeft,
@@ -46,7 +45,6 @@ interface ToolDef {
 
 const schematicTools: ToolDef[] = [
   { id: 'select', label: 'Auswahl', icon: <MousePointer2 size={18} />, shortcut: 'Esc', group: 'cursor' },
-  { id: 'place_component', label: 'Bauteil', icon: <Component size={18} />, shortcut: '', group: 'place' },
   { id: 'draw_wire', label: 'Draht', icon: <Minus size={18} />, shortcut: 'W', group: 'wire' },
   { id: 'place_label', label: 'Label', icon: <Type size={18} />, shortcut: 'L', group: 'annotation' },
   { id: 'delete', label: 'Löschen', icon: <Trash2 size={18} />, shortcut: 'Del', group: 'edit' },
@@ -54,7 +52,6 @@ const schematicTools: ToolDef[] = [
 
 const perfboardTools: ToolDef[] = [
   { id: 'select', label: 'Auswahl', icon: <MousePointer2 size={18} />, shortcut: 'Esc', group: 'cursor' },
-  { id: 'place_component', label: 'Bauteil', icon: <Component size={18} />, group: 'place' },
   { id: 'draw_wire', label: 'Draht', icon: <Minus size={18} />, shortcut: 'W', group: 'wire' },
   { id: 'draw_wire_bridge', label: 'Brücke', icon: <ArrowRightLeft size={18} />, group: 'wire' },
   { id: 'draw_solder_bridge', label: 'Löt-Brücke', icon: <Circle size={18} />, group: 'wire' },

@@ -39,6 +39,14 @@ export default function App() {
     const handler = (e: KeyboardEvent) => {
       const ctrl = e.ctrlKey || e.metaKey;
 
+      // Let text fields handle their own Ctrl shortcuts (Ctrl+A, C, V, X, Z etc.)
+      const tag = (e.target as HTMLElement)?.tagName;
+      const isEditable = (e.target as HTMLElement)?.isContentEditable;
+      const isTextField = tag === 'INPUT' || tag === 'TEXTAREA' || isEditable;
+      if (isTextField && ctrl && ['a','c','v','x','z','y'].includes(e.key.toLowerCase())) {
+        return; // let native text field behavior through
+      }
+
       // Suppress browser defaults for Ctrl+key combos that conflict
       if (ctrl && (e.key === 'w' || e.key === 'W')) { e.preventDefault(); return; } // close tab
       if (ctrl && (e.key === 'r' || e.key === 'R')) { e.preventDefault(); return; } // reload → rotation
