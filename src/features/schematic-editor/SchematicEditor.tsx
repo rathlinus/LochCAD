@@ -4,6 +4,7 @@
 
 import React, { useRef, useCallback, useState, useMemo, useEffect } from 'react';
 import { Stage, Layer, Line, Circle, Text, Rect, Group } from 'react-konva';
+import { RemoteCursorsLayer } from '@/components/collab/RemoteCursorsLayer';
 import type Konva from 'konva';
 import { useProjectStore, useSchematicStore, useCheckStore } from '@/stores';
 import { useCollabStore } from '@/stores/collabStore';
@@ -1228,6 +1229,9 @@ export default function SchematicEditor() {
 
         {/* ERC Error Highlighting Overlay */}
         <ERCOverlayLayer />
+
+        {/* Remote collaboration cursors */}
+        <RemoteCursorsLayer viewFilter="schematic" viewportScale={viewport.scale} />
       </Stage>
 
       {/* Tool hint overlay */}

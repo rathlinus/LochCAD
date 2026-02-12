@@ -4,6 +4,7 @@
 
 import React, { useRef, useCallback, useState, useMemo, useEffect } from 'react';
 import { Stage, Layer, Circle, Rect, Line, Text, Group } from 'react-konva';
+import { RemoteCursorsLayer } from '@/components/collab/RemoteCursorsLayer';
 import type Konva from 'konva';
 import { useProjectStore, usePerfboardStore, useCheckStore } from '@/stores';
 import { useCollabStore } from '@/stores/collabStore';
@@ -1128,6 +1129,13 @@ export default function PerfboardEditor() {
 
         {/* DRC Error Highlighting Overlay */}
         <DRCOverlayLayer />
+
+        {/* Remote collaboration cursors */}
+        <RemoteCursorsLayer
+          viewFilter="perfboard"
+          viewportScale={viewport.scale}
+          transformCursor={(c) => ({ x: (c.x + 1) * PERFBOARD_GRID, y: (c.y + 1) * PERFBOARD_GRID })}
+        />
       </Stage>
 
       {/* Tool hint */}
