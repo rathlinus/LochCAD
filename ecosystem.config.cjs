@@ -9,5 +9,13 @@ module.exports = {
         NODE_ENV: 'production',
       },
     },
+    {
+      name: 'lochcad-collab',
+      script: 'server/collab-server.js',
+      cwd: '/var/www/node/LochCAD',
+      env: {
+        NODE_ENV: 'production',
+      },
+    },
   ],
 };

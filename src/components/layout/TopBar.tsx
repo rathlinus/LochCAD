@@ -9,6 +9,8 @@ import {
   bomToCsv,
   bomToHtml,
 } from '@/lib/export/spice-bom';
+import { exportPerfboardPDF } from '@/lib/export/pdf-perfboard';
+import { PDFPreviewModal } from '@/components/PDFPreviewModal';
 import { runERC } from '@/lib/engine/erc';
 import { runDRC } from '@/lib/engine/drc';
 import { buildNetlist } from '@/lib/engine/netlist';
@@ -49,7 +51,14 @@ import {
   Keyboard,
   HelpCircle,
   X,
+  Users,
+  Share2,
+  User,
+  Wifi,
 } from 'lucide-react';
+import { useCollabStore } from '@/stores/collabStore';
+import { useAuthStore } from '@/stores/authStore';
+import { PresenceAvatars } from '../collab/PresenceAvatars';
 
 // ---- View Tabs ----
 const viewTabs: { id: EditorView; label: string; icon: React.ReactNode }[] = [
@@ -144,7 +153,9 @@ export function TopBar() {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [projectNameDraft, setProjectNameDraft] = useState(project.name);
+  const [pdfPreview, setPdfPreview] = useState<{ blobUrl: string; filename: string } | null>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
+  const collabConnected = useCollabStore((s) => s.connected);
 
   // Close menus on outside click
   useEffect(() => {
@@ -314,6 +325,12 @@ export function TopBar() {
     useToastStore.getState().showToast('Netlist exportiert', 'success');
   }, [project.name]);
 
+  const handleExportPerfboardPdf = useCallback(() => {
+    const proj = useProjectStore.getState().project;
+    const result = exportPerfboardPDF(proj.perfboard, proj.name, proj.componentLibrary);
+    setPdfPreview({ blobUrl: result.blobUrl, filename: result.filename });
+  }, []);
+
   // ---- Check Actions ----
   const handleRunERC = useCallback(() => {
     const sch = useProjectStore.getState().project.schematic;
@@ -403,6 +420,8 @@ export function TopBar() {
           { label: 'Stückliste CSV', icon: <FileSpreadsheet size={14} />, action: handleExportBomCsv },
           { label: 'Stückliste HTML', icon: <Globe size={14} />, action: handleExportBomHtml },
           { label: 'Netlist JSON', icon: <Globe size={14} />, action: handleExportNetlist },
+          { separator: true, label: '' },
+          { label: 'Bestückungsplan PDF', icon: <FileText size={14} />, action: handleExportPerfboardPdf },
         ]},
         { separator: true, label: '' },
         { label: 'Projekt umbenennen', icon: <FileText size={14} />, action: () => { setProjectNameDraft(project.name); setRenaming(true); } },
@@ -563,6 +582,40 @@ export function TopBar() {
       {/* Spacer */}
       <div className="flex-1" />
 
+      {/* Collaboration */}
+      <div className="flex items-center gap-2 mr-2">
+        <PresenceAvatars />
+        {collabConnected ? (
+          <button
+            className="flex items-center gap-1.5 px-2.5 py-1 bg-green-500/15 hover:bg-green-500/25 text-green-400 text-xs font-medium rounded-lg transition-colors"
+            onClick={() => useCollabStore.getState().openShareDialog()}
+            title="Zusammenarbeit verwalten"
+          >
+            <Wifi size={13} />
+            <span>Live</span>
+          </button>
+        ) : (
+          <button
+            className="flex items-center gap-1.5 px-2.5 py-1 bg-lochcad-accent/10 hover:bg-lochcad-accent/20 text-lochcad-accent text-xs font-medium rounded-lg transition-colors"
+            onClick={() => {
+              const profile = useAuthStore.getState().profile;
+              if (!profile) {
+                useAuthStore.getState().openAuthModal();
+              } else {
+                useCollabStore.getState().openShareDialog();
+              }
+            }}
+            title="Projekt teilen"
+          >
+            <Share2 size={13} />
+            <span>Teilen</span>
+          </button>
+        )}
+      </div>
+
+      {/* Separator */}
+      <div className="w-px h-5 bg-lochcad-panel/30 mx-1" />
+
       {/* Quick Actions */}
       <div className="flex items-center gap-0.5 mr-1">
         <button className="btn-icon" onClick={handleSave} data-tooltip="Speichern (Strg+S)">
@@ -613,10 +666,36 @@ export function TopBar() {
         )}
       </div>
 
-      {/* Version */}
+      {/* Account button */}
+      <button
+        className="btn-icon mr-0.5"
+        onClick={() => useAuthStore.getState().openAuthModal()}
+        title={useAuthStore.getState().profile ? `Profil: ${useAuthStore.getState().profile!.displayName}` : 'Account erstellen'}
+      >
+        {useAuthStore.getState().profile ? (
+          <div
+            className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-bold"
+            style={{ backgroundColor: useAuthStore.getState().profile!.color }}
+          >
+            {useAuthStore.getState().profile!.displayName[0].toUpperCase()}
+          </div>
+        ) : (
+          <User size={15} />
+        )}
+      </button>
+
       <span className="text-[10px] text-lochcad-text-dim ml-1 mr-2">
         v0.3.8
       </span>
+
+      {/* PDF Preview Modal */}
+      {pdfPreview && (
+        <PDFPreviewModal
+          blobUrl={pdfPreview.blobUrl}
+          filename={pdfPreview.filename}
+          onClose={() => setPdfPreview(null)}
+        />
+      )}
     </div>
   );
 }

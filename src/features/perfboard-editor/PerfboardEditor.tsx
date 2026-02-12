@@ -6,6 +6,7 @@ import React, { useRef, useCallback, useState, useMemo, useEffect } from 'react'
 import { Stage, Layer, Circle, Rect, Line, Text, Group } from 'react-konva';
 import type Konva from 'konva';
 import { useProjectStore, usePerfboardStore, useCheckStore } from '@/stores';
+import { useCollabStore } from '@/stores/collabStore';
 import { getBuiltInComponents, getAdjustedFootprint } from '@/lib/component-library';
 import { COLORS, PERFBOARD_GRID, CATEGORY_PREFIX, nextUniqueReference } from '@/constants';
 import type { GridPosition, PerfboardComponent, PerfboardConnection, ComponentDefinition, FootprintPad } from '@/types';
@@ -503,6 +504,12 @@ export default function PerfboardEditor() {
     if (!pos) return;
     const gridPos = pixelToGrid(pos.x, pos.y);
     setMouseGridPos(gridPos);
+
+    // Broadcast cursor position for collaboration
+    const collabState = useCollabStore.getState();
+    if (collabState.connected) {
+      collabState.updateLocalAwareness({ cursor: { x: gridPos.col, y: gridPos.row } });
+    }
 
     // Box selection tracking
     if (boxSelectStartRef.current) {

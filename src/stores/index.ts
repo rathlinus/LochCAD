@@ -4,3 +4,5 @@ export { useSchematicStore } from './schematicStore';
 export { usePerfboardStore } from './perfboardStore';
 export { useToastStore } from './toastStore';
 export { useCheckStore } from './checkStore';
+export { useAuthStore } from './authStore';
+export { useCollabStore } from './collabStore';

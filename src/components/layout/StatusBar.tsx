@@ -1,5 +1,6 @@
 import React from 'react';
 import { useProjectStore, useSchematicStore, usePerfboardStore } from '@/stores';
+import { useCollabStore } from '@/stores/collabStore';
 
 const viewLabels: Record<string, string> = {
   schematic: 'Schaltplan',
@@ -31,6 +32,9 @@ export function StatusBar() {
   const activeSheetId = useProjectStore((s) => s.activeSheetId);
   const schematicSelection = useSchematicStore((s) => s.selection);
   const perfboardSelection = usePerfboardStore((s) => s.selectedIds);
+  const collabConnected = useCollabStore((s) => s.connected);
+  const collabRoomId = useCollabStore((s) => s.roomId);
+  const collabPeers = useCollabStore((s) => s.peers);
 
   const isSchematic = currentView === 'schematic';
   const isPerfboard = currentView === 'perfboard';
@@ -125,6 +129,18 @@ export function StatusBar() {
         <>
           <span className="text-lochcad-panel/40">│</span>
           <span className="text-lochcad-accent-warm">● Ungespeichert</span>
+        </>
+      )}
+
+      {/* Collaboration status */}
+      {collabConnected && collabRoomId && (
+        <>
+          <span className="text-lochcad-panel/40">│</span>
+          <span className="flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block" />
+            <span className="text-green-400">Live</span>
+            <span className="text-lochcad-text-dim">· {collabPeers.size + 1} Nutzer</span>
+          </span>
         </>
       )}
     </div>

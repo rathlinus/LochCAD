@@ -7,6 +7,7 @@ import { PropertiesPanel } from '../properties/PropertiesPanel';
 import { SheetTabs } from './SheetTabs';
 import { StatusBar } from './StatusBar';
 import { CheckPanel } from '../CheckPanel';
+import { CursorOverlay } from '../collab/CursorOverlay';
 
 const SchematicEditor = lazy(() => import('@/features/schematic-editor/SchematicEditor'));
 const PerfboardEditor = lazy(() => import('@/features/perfboard-editor/PerfboardEditor'));
@@ -39,6 +40,7 @@ export function AppLayout() {
 
           {/* Main Canvas */}
           <div className="flex-1 flex flex-col relative overflow-hidden min-h-0">
+            <CursorOverlay />
             <Suspense fallback={<LoadingFallback />}>
               {currentView === 'schematic' && <SchematicEditor />}
               {currentView === 'perfboard' && <PerfboardEditor />}

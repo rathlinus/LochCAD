@@ -6,6 +6,7 @@ import React, { useRef, useCallback, useState, useMemo, useEffect } from 'react'
 import { Stage, Layer, Line, Circle, Text, Rect, Group } from 'react-konva';
 import type Konva from 'konva';
 import { useProjectStore, useSchematicStore, useCheckStore } from '@/stores';
+import { useCollabStore } from '@/stores/collabStore';
 import { getBuiltInComponents, getComponentById } from '@/lib/component-library';
 import { SymbolRenderer } from './SymbolRenderer';
 import { COLORS, SCHEMATIC_GRID, SCHEMATIC_WIDTH, SCHEMATIC_HEIGHT, CATEGORY_PREFIX, nextUniqueReference } from '@/constants';
@@ -299,6 +300,12 @@ export default function SchematicEditor() {
         ? snapWithPins(pos)
         : snap(pos);
       setMousePos(snapped);
+
+      // Broadcast cursor position for collaboration
+      const collabState = useCollabStore.getState();
+      if (collabState.connected) {
+        collabState.updateLocalAwareness({ cursor: { x: snapped.x, y: snapped.y } });
+      }
 
       // Box selection tracking
       if (boxSelectStartRef.current) {

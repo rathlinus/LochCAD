@@ -5,6 +5,9 @@ import { useProjectManagerStore } from '@/stores/projectManagerStore';
 import { ToastContainer } from '@/components/Toast';
 import { ProjectManager } from '@/components/ProjectManager';
 import { IntroScreen, shouldShowIntro } from '@/components/IntroScreen';
+import { CollabProvider } from '@/components/collab/CollabProvider';
+import { AuthModal } from '@/components/collab/AuthModal';
+import { ShareDialog } from '@/components/collab/ShareDialog';
 
 /** Trigger a file-open dialog and load a .lochcad / .json project */
 function triggerImport() {
@@ -211,6 +214,9 @@ export default function App() {
       <AppLayout />
       <ProjectManager />
       <ToastContainer />
+      <CollabProvider />
+      <AuthModal />
+      <ShareDialog />
     </>
   );
 }
