@@ -23,6 +23,8 @@ export function CollabProvider() {
   const schematicDrawing = useSchematicStore((s) => s.isDrawing);
   const perfboardDrawing = usePerfboardStore((s) => s.isDrawing);
   const activeSheetId = useProjectStore((s) => s.activeSheetId);
+  const schematicSelection = useSchematicStore((s) => s.selection);
+  const perfboardSelection = usePerfboardStore((s) => s.selectedIds);
 
   const joinedRef = useRef(false);
 
@@ -48,7 +50,7 @@ export function CollabProvider() {
     }
   }, [profile]);
 
-  // Broadcast local view/tool/drawing awareness
+  // Broadcast local view/tool/drawing/selection awareness
   useEffect(() => {
     if (!connected) return;
     const tool = currentView === 'schematic' ? schematicTool
@@ -58,13 +60,26 @@ export function CollabProvider() {
       : currentView === 'perfboard' ? perfboardDrawing
       : false;
 
+    // Gather currently selected element IDs
+    const selection: string[] = currentView === 'schematic'
+      ? [
+          ...schematicSelection.componentIds,
+          ...schematicSelection.wireIds,
+          ...schematicSelection.labelIds,
+          ...schematicSelection.junctionIds,
+        ]
+      : currentView === 'perfboard'
+        ? perfboardSelection
+        : [];
+
     updateLocalAwareness({
       view: currentView,
       tool,
       drawing,
       activeSheetId,
+      selection,
     });
-  }, [connected, currentView, schematicTool, perfboardTool, schematicDrawing, perfboardDrawing, activeSheetId]);
+  }, [connected, currentView, schematicTool, perfboardTool, schematicDrawing, perfboardDrawing, activeSheetId, schematicSelection, perfboardSelection]);
 
   return null; // This is a headless provider
 }

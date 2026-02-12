@@ -164,6 +164,24 @@ export default function SchematicEditor() {
     return map;
   }, [netColors, computedNetlist, sheetLabels, sheetWires, sheetComponents, allComponents]);
 
+  // Remote selection map: elementId → { color, name } for collab highlights
+  const collabPeers = useCollabStore((s) => s.peers);
+  const collabConnected = useCollabStore((s) => s.connected);
+  const remoteSelectionMap = useMemo(() => {
+    const map = new Map<string, { color: string; name: string }>();
+    if (!collabConnected) return map;
+    for (const [, peer] of collabPeers) {
+      const { awareness, user } = peer;
+      if (!awareness.selection || awareness.view !== 'schematic') continue;
+      for (const id of awareness.selection) {
+        if (!map.has(id)) {
+          map.set(id, { color: user.color, name: user.name });
+        }
+      }
+    }
+    return map;
+  }, [collabPeers, collabConnected]);
+
   // Routing obstacles (full bboxes) + pin corridor allowed cells
   const { sheetObstacles, sheetAllowedCells } = useMemo(() => {
     const { obstacles, allowedCells } = buildRoutingContext(sheetComponents, allComponents);
@@ -743,6 +761,7 @@ export default function SchematicEditor() {
                 isSelected={selection.wireIds.includes(wire.id)}
                 isNetHighlighted={highlightedNetPoints.length > 0 && selection.wireIds.includes(wire.id)}
                 netColor={wireNetColorMap.get(wire.id)}
+                remoteSelectedBy={remoteSelectionMap.get(wire.id) || null}
                 onClick={(e) => handleWireClick(wire.id, e)}
                 onDblClick={(e) => handleWireDblClick(wire.id, e)}
               />
@@ -910,6 +929,7 @@ export default function SchematicEditor() {
                 value={comp.value}
                 isSelected={selection.componentIds.includes(comp.id)}
                 isHovered={hoveredComponentId === comp.id}
+                remoteSelectedBy={remoteSelectionMap.get(comp.id) || null}
                 draggable={activeTool === 'select'}
                 onClick={(e: any) => handleComponentClick(comp.id, e)}
                 onDblClick={() => {
@@ -1291,21 +1311,39 @@ const WireRenderer: React.FC<{
   isSelected: boolean;
   isNetHighlighted?: boolean;
   netColor?: string;
+  remoteSelectedBy?: { color: string; name: string } | null;
   onClick: (e: any) => void;
   onDblClick?: (e: any) => void;
 }> = React.memo(
-  ({ wire, isSelected, isNetHighlighted, netColor, onClick, onDblClick }) => (
-    <Line
-      points={wire.points.flatMap((p) => [p.x, p.y])}
-      stroke={isNetHighlighted ? '#ffaa00' : isSelected ? COLORS.selected : netColor || COLORS.wire}
-      strokeWidth={isSelected || isNetHighlighted ? 3 : 2}
-      lineCap="round"
-      lineJoin="round"
-      hitStrokeWidth={10}
-      onClick={onClick}
-      onDblClick={onDblClick}
-    />
-  )
+  ({ wire, isSelected, isNetHighlighted, netColor, remoteSelectedBy, onClick, onDblClick }) => {
+    const remoteColor = !isSelected && remoteSelectedBy ? remoteSelectedBy.color : null;
+    return (
+      <>
+        {/* Remote selection glow */}
+        {remoteColor && (
+          <Line
+            points={wire.points.flatMap((p) => [p.x, p.y])}
+            stroke={remoteColor}
+            strokeWidth={7}
+            lineCap="round"
+            lineJoin="round"
+            opacity={0.35}
+            listening={false}
+          />
+        )}
+        <Line
+          points={wire.points.flatMap((p) => [p.x, p.y])}
+          stroke={isNetHighlighted ? '#ffaa00' : isSelected ? COLORS.selected : remoteColor || netColor || COLORS.wire}
+          strokeWidth={isSelected || isNetHighlighted ? 3 : 2}
+          lineCap="round"
+          lineJoin="round"
+          hitStrokeWidth={10}
+          onClick={onClick}
+          onDblClick={onDblClick}
+        />
+      </>
+    );
+  }
 );
 
 WireRenderer.displayName = 'WireRenderer';

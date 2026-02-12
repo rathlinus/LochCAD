@@ -212,6 +212,24 @@ export default function PerfboardEditor() {
     return map;
   }, [netColors, computedNetlist, perfboard.connections, perfboard.components, allLib]);
 
+  // Remote selection map: elementId → { color, name } for collab highlights
+  const collabPeers = useCollabStore((s) => s.peers);
+  const collabConnected = useCollabStore((s) => s.connected);
+  const remoteSelectionMap = useMemo(() => {
+    const map = new Map<string, { color: string; name: string }>();
+    if (!collabConnected) return map;
+    for (const [, peer] of collabPeers) {
+      const { awareness, user } = peer;
+      if (!awareness.selection || awareness.view !== 'perfboard') continue;
+      for (const id of awareness.selection) {
+        if (!map.has(id)) {
+          map.set(id, { color: user.color, name: user.name });
+        }
+      }
+    }
+    return map;
+  }, [collabPeers, collabConnected]);
+
   // ---------- Ratsnest (dotted lines for unconnected schematic nets) ----------
   const ratsnestLines = useMemo(() => {
     if (!schematic || perfboard.components.length === 0) return [];
@@ -801,6 +819,7 @@ export default function PerfboardEditor() {
               gridToPixel={gridToPixel}
               isSelected={selectedIds.includes(conn.id)}
               netColor={connectionNetColorMap.get(conn.id)}
+              remoteSelectedBy={remoteSelectionMap.get(conn.id) || null}
               onClick={() => {
                 if (activeTool === 'select') usePerfboardStore.getState().select([conn.id]);
                 else if (activeTool === 'delete') usePerfboardStore.getState().removeConnection(conn.id);
@@ -939,6 +958,7 @@ export default function PerfboardEditor() {
                 gridToPixel={gridToPixel}
                 pixelToGrid={pixelToGrid}
                 isSelected={selectedIds.includes(comp.id)}
+                remoteSelectedBy={remoteSelectionMap.get(comp.id) || null}
                 draggable={activeTool === 'select'}
                 onClick={(e: any) => {
                   // Only consume event for select / delete — let drawing
@@ -1134,8 +1154,9 @@ const ConnectionRenderer: React.FC<{
   gridToPixel: (pos: GridPosition) => { x: number; y: number };
   isSelected: boolean;
   netColor?: string;
+  remoteSelectedBy?: { color: string; name: string } | null;
   onClick: () => void;
-}> = React.memo(({ connection, gridToPixel, isSelected, netColor, onClick }) => {
+}> = React.memo(({ connection, gridToPixel, isSelected, netColor, remoteSelectedBy, onClick }) => {
   const from = gridToPixel(connection.from);
   const to = gridToPixel(connection.to);
 
@@ -1171,6 +1192,31 @@ const ConnectionRenderer: React.FC<{
 
   return (
     <Group>
+      {/* Remote selection glow */}
+      {remoteSelectedBy && !isSelected && (
+        <>
+          <Line
+            points={pixelPoints}
+            stroke={remoteSelectedBy.color}
+            strokeWidth={strokeWidth + 5}
+            opacity={0.35}
+            lineCap="round"
+            lineJoin="round"
+            listening={false}
+          />
+          {pixelPoints.length >= 2 && (
+            <Text
+              x={pixelPoints[0] + 6}
+              y={pixelPoints[1] - 16}
+              text={remoteSelectedBy.name}
+              fontSize={9}
+              fontFamily="JetBrains Mono, monospace"
+              fill={remoteSelectedBy.color}
+              listening={false}
+            />
+          )}
+        </>
+      )}
       {/* Wire/bridge line */}
       <Line
         points={pixelPoints}
@@ -1223,12 +1269,13 @@ const PerfboardComponentRenderer: React.FC<{
   gridToPixel: (pos: GridPosition) => { x: number; y: number };
   pixelToGrid: (x: number, y: number) => GridPosition;
   isSelected: boolean;
+  remoteSelectedBy?: { color: string; name: string } | null;
   draggable?: boolean;
   onClick: (e: any) => void;
   onDragStart?: () => void;
   onDragMove?: () => void;
   onDragEnd?: (gridPos: GridPosition) => boolean | void;
-}> = React.memo(({ component, definition, gridToPixel, pixelToGrid, isSelected, draggable = false, onClick, onDragStart, onDragMove, onDragEnd }) => {
+}> = React.memo(({ component, definition, gridToPixel, pixelToGrid, isSelected, remoteSelectedBy, draggable = false, onClick, onDragStart, onDragMove, onDragEnd }) => {
   // Use adjusted footprint pads if holeSpan is set
   const { pads: adjustedPads } = getAdjustedFootprint(definition, component.properties?.holeSpan);
   const basePos = gridToPixel(component.gridPosition);
@@ -1357,6 +1404,47 @@ const PerfboardComponentRenderer: React.FC<{
         fill={isSelected ? COLORS.selected : COLORS.componentRef}
         align="center"
       />
+
+      {/* Remote selection highlight */}
+      {remoteSelectedBy && !isSelected && adjustedPads.length > 1 && (() => {
+        const cols = adjustedPads.map((p) => {
+          const rp = rotatePadOffset(p.gridPosition);
+          return component.gridPosition.col + rp.col;
+        });
+        const rows = adjustedPads.map((p) => {
+          const rp = rotatePadOffset(p.gridPosition);
+          return component.gridPosition.row + rp.row;
+        });
+        const cMin = Math.min(...cols), cMax = Math.max(...cols);
+        const rMin = Math.min(...rows), rMax = Math.max(...rows);
+        const minPos = gridToPixel({ col: cMin, row: rMin });
+        const maxPos = gridToPixel({ col: cMax, row: rMax });
+        return (
+          <>
+            <Rect
+              x={minPos.x - basePos.x - 12}
+              y={minPos.y - basePos.y - 12}
+              width={maxPos.x - minPos.x + 24}
+              height={maxPos.y - minPos.y + 24}
+              stroke={remoteSelectedBy.color}
+              strokeWidth={2}
+              dash={[6, 3]}
+              fill={`${remoteSelectedBy.color}15`}
+              cornerRadius={4}
+              listening={false}
+            />
+            <Text
+              x={minPos.x - basePos.x - 12}
+              y={minPos.y - basePos.y - 26}
+              text={remoteSelectedBy.name}
+              fontSize={9}
+              fontFamily="JetBrains Mono, monospace"
+              fill={remoteSelectedBy.color}
+              listening={false}
+            />
+          </>
+        );
+      })()}
     </Group>
   );
 });

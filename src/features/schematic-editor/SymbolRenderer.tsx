@@ -68,6 +68,8 @@ interface SymbolRendererProps {
   isSelected?: boolean;
   isHovered?: boolean;
   isDimmed?: boolean;
+  /** Remote user selection: { color, name } of the user who selected this */
+  remoteSelectedBy?: { color: string; name: string } | null;
   onClick?: (e: any) => void;
   onDblClick?: () => void;
   onDragStart?: () => void;
@@ -89,6 +91,7 @@ export const SymbolRenderer: React.FC<SymbolRendererProps> = React.memo(({
   isSelected = false,
   isHovered = false,
   isDimmed = false,
+  remoteSelectedBy = null,
   onClick,
   onDblClick,
   onDragStart,
@@ -162,6 +165,34 @@ export const SymbolRenderer: React.FC<SymbolRendererProps> = React.memo(({
           cornerRadius={4}
           listening={false}
         />
+      )}
+
+      {/* Remote user selection highlight */}
+      {!isSelected && remoteSelectedBy && (
+        <>
+          <Rect
+            x={bounds.x - 2}
+            y={bounds.y - 2}
+            width={bounds.width + 4}
+            height={bounds.height + 4}
+            fill={remoteSelectedBy.color + '15'}
+            stroke={remoteSelectedBy.color}
+            strokeWidth={2}
+            dash={[6, 3]}
+            cornerRadius={5}
+            listening={false}
+          />
+          <Text
+            x={bounds.x + bounds.width + 4}
+            y={bounds.y - 6}
+            text={remoteSelectedBy.name}
+            fontSize={9}
+            fontFamily="Inter, sans-serif"
+            fill={remoteSelectedBy.color}
+            listening={false}
+            scaleX={mirror ? -1 : 1}
+          />
+        </>
       )}
 
       {/* Graphics */}
