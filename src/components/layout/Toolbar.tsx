@@ -1,6 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { useProjectStore, useSchematicStore, usePerfboardStore, useCheckStore } from '@/stores';
-import { useToastStore } from '@/stores';
+import { useProjectStore, useSchematicStore, usePerfboardStore } from '@/stores';
 import type { SyncResult } from '@/stores/projectStore';
 import type { ToolType, PerfboardToolType } from '@/types';
 import type { AutoLayoutMode } from '@/lib/engine/auto-layout';
@@ -11,11 +10,6 @@ import {
   Circle,
   ArrowRightLeft,
   Trash2,
-  Ruler,
-  Undo2,
-  Redo2,
-  RotateCw,
-  FlipHorizontal2,
   ZoomIn,
   ZoomOut,
   Maximize,
@@ -23,17 +17,12 @@ import {
   RefreshCw,
   ArrowRight,
   X,
-  AlertTriangle,
-  CheckCircle2,
   MoreHorizontal,
   LayoutGrid,
   Cable,
   ChevronDown,
   Eraser,
 } from 'lucide-react';
-import { runERC } from '@/lib/engine/erc';
-import { runDRC } from '@/lib/engine/drc';
-import { useCheckStore as useCheckStoreImport } from '@/stores/checkStore';
 
 interface ToolDef {
   id: string;
@@ -79,7 +68,6 @@ export function Toolbar() {
   const setSchematicTool = useSchematicStore((s) => s.setActiveTool);
   const perfboardTool = usePerfboardStore((s) => s.activeTool);
   const setPerfboardTool = usePerfboardStore((s) => s.setActiveTool);
-  const [syncPopup, setSyncPopup] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [syncDirection, setSyncDirection] = useState<'sch2pb' | 'pb2sch' | null>(null);
 
@@ -105,37 +93,6 @@ export function Toolbar() {
   const setViewport = isSchematic
     ? useSchematicStore.getState().setViewport
     : usePerfboardStore.getState().setViewport;
-  const undo = isSchematic
-    ? useSchematicStore.getState().undo
-    : usePerfboardStore.getState().undo;
-  const redo = isSchematic
-    ? useSchematicStore.getState().redo
-    : usePerfboardStore.getState().redo;
-
-  const handleRotateSelected = useCallback(() => {
-    if (isSchematic) {
-      const sel = useSchematicStore.getState().selection;
-      sel.componentIds.forEach((id) => useSchematicStore.getState().rotateComponent(id));
-    } else if (isPerfboard) {
-      const sel = usePerfboardStore.getState().selectedIds;
-      sel.forEach((id) => usePerfboardStore.getState().rotateComponent(id));
-    }
-  }, [isSchematic, isPerfboard]);
-
-  const handleMirrorSelected = useCallback(() => {
-    if (isSchematic) {
-      const sel = useSchematicStore.getState().selection;
-      sel.componentIds.forEach((id) => useSchematicStore.getState().mirrorComponent(id));
-    }
-  }, [isSchematic]);
-
-  const handleRunERC = useCallback(() => {
-    useCheckStore.getState().runERCCheck();
-  }, []);
-
-  const handleRunDRC = useCallback(() => {
-    useCheckStore.getState().runDRCCheck();
-  }, []);
 
   const handleAutoLayout = useCallback((mode?: AutoLayoutMode) => {
     usePerfboardStore.getState().autoLayoutComponents(mode);
@@ -158,16 +115,8 @@ export function Toolbar() {
       grouped={grouped}
       activeTool={activeTool}
       setTool={setTool}
-      undo={undo}
-      redo={redo}
-      handleRotateSelected={handleRotateSelected}
-      handleMirrorSelected={handleMirrorSelected}
       viewport={viewport}
       setViewport={setViewport}
-      handleRunERC={handleRunERC}
-      handleRunDRC={handleRunDRC}
-      syncPopup={syncPopup}
-      setSyncPopup={setSyncPopup}
       syncResult={syncResult}
       setSyncResult={setSyncResult}
       syncDirection={syncDirection}
@@ -181,22 +130,16 @@ export function Toolbar() {
 
 // ======== Overflow-aware toolbar layout ========
 
+type PopupId = 'sync' | 'more' | 'layout' | null;
+
 interface ToolbarOverflowProps {
   isSchematic: boolean;
   isPerfboard: boolean;
   grouped: (ToolDef | 'sep')[];
   activeTool: string;
   setTool: (t: string) => void;
-  undo: () => void;
-  redo: () => void;
-  handleRotateSelected: () => void;
-  handleMirrorSelected: () => void;
   viewport: { scale: number; x: number; y: number };
   setViewport: (vp: Partial<{ scale: number; x: number; y: number }>) => void;
-  handleRunERC: () => void;
-  handleRunDRC: () => void;
-  syncPopup: boolean;
-  setSyncPopup: React.Dispatch<React.SetStateAction<boolean>>;
   syncResult: SyncResult | null;
   setSyncResult: React.Dispatch<React.SetStateAction<SyncResult | null>>;
   syncDirection: 'sch2pb' | 'pb2sch' | null;
@@ -208,15 +151,19 @@ interface ToolbarOverflowProps {
 
 function ToolbarOverflow({
   isSchematic, isPerfboard, grouped, activeTool, setTool,
-  undo, redo, handleRotateSelected, handleMirrorSelected,
-  viewport, setViewport, handleRunERC, handleRunDRC,
-  syncPopup, setSyncPopup, syncResult, setSyncResult, syncDirection, setSyncDirection,
+  viewport, setViewport,
+  syncResult, setSyncResult, syncDirection, setSyncDirection,
   handleAutoLayout, handleAutoRoute, handleRemoveAllConnections,
 }: ToolbarOverflowProps) {
   const toolbarRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
   const [visibleCount, setVisibleCount] = useState(999);
-  const [moreOpen, setMoreOpen] = useState(false);
+  // Single popup state: only one popup can be open at a time
+  const [openPopup, setOpenPopup] = useState<PopupId>(null);
+
+  const togglePopup = useCallback((id: Exclude<PopupId, null>) => {
+    setOpenPopup((prev) => (prev === id ? null : id));
+  }, []);
 
   // Sync button reserved width (always visible on the right)
   const SYNC_RESERVED = 90;
@@ -247,16 +194,16 @@ function ToolbarOverflow({
     return () => ro.disconnect();
   }, []);
 
-  // Close "more" dropdown when clicking outside
+  // Close any open popup when clicking outside
   useEffect(() => {
-    if (!moreOpen) return;
+    if (openPopup === null) return;
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (!target.closest('[data-more-menu]')) setMoreOpen(false);
+      if (!target.closest('[data-toolbar-popup]')) setOpenPopup(null);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [moreOpen]);
+  }, [openPopup]);
 
   // Define the toolbar sections as renderable items
   const sections = useMemo(() => {
@@ -286,31 +233,7 @@ function ToolbarOverflow({
       ),
     });
 
-    // Section 1: Undo / Redo / Rotate / Mirror
-    s.push({
-      key: 'edit',
-      render: (inDropdown) => (
-        <div className={inDropdown ? 'flex flex-wrap gap-0.5 p-1' : 'flex items-center gap-0.5'}>
-          <button className="btn-icon" onClick={undo} data-tooltip="Rückgängig (Strg+Z)">
-            <Undo2 size={16} />
-          </button>
-          <button className="btn-icon" onClick={redo} data-tooltip="Wiederholen (Strg+Y)">
-            <Redo2 size={16} />
-          </button>
-          <div className={inDropdown ? 'w-px h-5 bg-lochcad-panel/20 mx-0.5' : 'w-px h-5 bg-lochcad-panel/20 mx-0.5'} />
-          <button className="btn-icon" onClick={handleRotateSelected} data-tooltip="Drehen (R)">
-            <RotateCw size={16} />
-          </button>
-          {isSchematic && (
-            <button className="btn-icon" onClick={handleMirrorSelected} data-tooltip="Spiegeln (X)">
-              <FlipHorizontal2 size={16} />
-            </button>
-          )}
-        </div>
-      ),
-    });
-
-    // Section 2: Zoom
+    // Section 1: Zoom
     s.push({
       key: 'zoom',
       render: (inDropdown) => (
@@ -343,36 +266,7 @@ function ToolbarOverflow({
       ),
     });
 
-    // Section 3: Check buttons
-    s.push({
-      key: 'check',
-      render: (inDropdown) => (
-        <div className={inDropdown ? 'flex flex-wrap gap-0.5 p-1' : 'flex items-center gap-0.5'}>
-          {isSchematic && (
-            <button
-              className="btn-icon flex items-center gap-1 px-2"
-              onClick={handleRunERC}
-              data-tooltip="ERC — Electrical Rules Check"
-            >
-              <AlertTriangle size={15} />
-              <span className="text-[10px]">ERC</span>
-            </button>
-          )}
-          {isPerfboard && (
-            <button
-              className="btn-icon flex items-center gap-1 px-2"
-              onClick={handleRunDRC}
-              data-tooltip="DRC — Design Rules Check"
-            >
-              <CheckCircle2 size={15} />
-              <span className="text-[10px]">DRC</span>
-            </button>
-          )}
-        </div>
-      ),
-    });
-
-    // Section 4: Auto-Layout & Autorouter (perfboard only)
+    // Section 2: Auto-Layout & Autorouter (perfboard only)
     if (isPerfboard) {
       s.push({
         key: 'auto',
@@ -382,13 +276,15 @@ function ToolbarOverflow({
             handleAutoLayout={handleAutoLayout}
             handleAutoRoute={handleAutoRoute}
             handleRemoveAllConnections={handleRemoveAllConnections}
+            layoutOpen={openPopup === 'layout'}
+            onToggleLayout={() => togglePopup('layout')}
           />
         ),
       });
     }
 
     return s;
-  }, [grouped, activeTool, setTool, undo, redo, handleRotateSelected, handleMirrorSelected, isSchematic, isPerfboard, viewport.scale, setViewport, handleRunERC, handleRunDRC, handleAutoLayout, handleAutoRoute, handleRemoveAllConnections]);
+  }, [grouped, activeTool, setTool, isSchematic, isPerfboard, viewport.scale, setViewport, handleAutoLayout, handleAutoRoute, handleRemoveAllConnections, openPopup, togglePopup]);
 
   const visibleSections = sections.slice(0, visibleCount);
   const overflowSections = sections.slice(visibleCount);
@@ -422,21 +318,21 @@ function ToolbarOverflow({
 
       {/* More button */}
       {hasOverflow && (
-        <div className="relative shrink-0 ml-1" data-more-menu>
+        <div className="relative shrink-0 ml-1" data-toolbar-popup>
           <button
-            className={`btn-icon flex items-center gap-0.5 px-1.5 ${moreOpen ? 'bg-lochcad-panel/40' : ''}`}
-            onClick={() => setMoreOpen(!moreOpen)}
+            className={`btn-icon flex items-center gap-0.5 px-1.5 ${openPopup === 'more' ? 'bg-lochcad-panel/40' : ''}`}
+            onClick={() => togglePopup('more')}
             data-tooltip="More tools"
           >
             <MoreHorizontal size={16} />
           </button>
-          {moreOpen && (
-            <div className="absolute top-full left-0 mt-1 z-[9990] bg-lochcad-surface border border-lochcad-panel/50 rounded-lg shadow-xl p-1.5 min-w-[180px]" data-more-menu>
+          {openPopup === 'more' && (
+            <div className="absolute top-full left-0 mt-1 z-[9990] bg-lochcad-surface border border-lochcad-panel/50 rounded-lg shadow-xl p-1.5 min-w-[180px]" data-toolbar-popup>
               {overflowSections.map((sec, i) => (
                 <React.Fragment key={sec.key}>
                   {i > 0 && <div className="h-px bg-lochcad-panel/30 my-1" />}
                   <div className="text-[9px] text-gray-500 uppercase tracking-wider px-1.5 py-0.5 select-none">
-                    {sec.key === 'tools' ? 'Tools' : sec.key === 'edit' ? 'Edit' : sec.key === 'zoom' ? 'Zoom' : sec.key === 'check' ? 'Check' : sec.key === 'auto' ? 'Auto' : sec.key}
+                    {sec.key === 'tools' ? 'Tools' : sec.key === 'zoom' ? 'Zoom' : sec.key === 'auto' ? 'Auto' : sec.key}
                   </div>
                   {sec.render(true)}
                 </React.Fragment>
@@ -450,21 +346,21 @@ function ToolbarOverflow({
       <div className="flex-1 min-w-0" />
 
       {/* Sync button (always visible, right side) */}
-      <div className="relative shrink-0">
+      <div className="relative shrink-0" data-toolbar-popup>
         <button
           className="btn-icon flex items-center gap-1 px-2"
-          onClick={() => { setSyncPopup(!syncPopup); setSyncResult(null); setSyncDirection(null); }}
+          onClick={() => { togglePopup('sync'); setSyncResult(null); setSyncDirection(null); }}
           data-tooltip="Sync Schaltplan ↔ Lochraster"
         >
           <RefreshCw size={16} />
           <span className="text-[10px]">Sync</span>
         </button>
 
-        {syncPopup && (
-          <div className="absolute top-full right-0 mt-1 z-[9990] bg-lochcad-surface border border-lochcad-panel/50 rounded-lg shadow-xl p-4 w-80">
+        {openPopup === 'sync' && (
+          <div className="absolute top-full right-0 mt-1 z-[9990] bg-lochcad-surface border border-lochcad-panel/50 rounded-lg shadow-xl p-4 w-80" data-toolbar-popup>
             <div className="flex items-center justify-between mb-3">
               <span className="text-sm font-semibold text-white">Synchronisation</span>
-              <button className="btn-icon" onClick={() => setSyncPopup(false)}>
+              <button className="btn-icon" onClick={() => setOpenPopup(null)}>
                 <X size={14} />
               </button>
             </div>
@@ -558,32 +454,23 @@ function AutoToolsSection({
   handleAutoLayout,
   handleAutoRoute,
   handleRemoveAllConnections,
+  layoutOpen,
+  onToggleLayout,
 }: {
   inDropdown: boolean;
   handleAutoLayout: (mode?: AutoLayoutMode) => void;
   handleAutoRoute: () => void;
   handleRemoveAllConnections: () => void;
+  layoutOpen: boolean;
+  onToggleLayout: () => void;
 }) {
-  const [layoutOpen, setLayoutOpen] = useState(false);
-
-  // Close dropdown on outside click
-  useEffect(() => {
-    if (!layoutOpen) return;
-    const handler = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (!target.closest('[data-layout-menu]')) setLayoutOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [layoutOpen]);
-
   return (
     <div className={inDropdown ? 'flex flex-wrap gap-0.5 p-1' : 'flex items-center gap-0.5'}>
       {/* Layout button with mode dropdown */}
-      <div className="relative" data-layout-menu>
+      <div className="relative" data-toolbar-popup>
         <button
           className="btn-icon flex items-center gap-0.5 px-2"
-          onClick={() => setLayoutOpen(!layoutOpen)}
+          onClick={onToggleLayout}
           data-tooltip="Auto-Layout — Bauteile automatisch platzieren"
         >
           <LayoutGrid size={15} />
@@ -594,7 +481,7 @@ function AutoToolsSection({
         {layoutOpen && (
           <div
             className="absolute top-full left-0 mt-1 z-[9999] bg-lochcad-surface border border-lochcad-panel/50 rounded-lg shadow-xl p-1.5 min-w-[220px]"
-            data-layout-menu
+            data-toolbar-popup
           >
             <div className="text-[9px] text-gray-500 uppercase tracking-wider px-2 py-1 select-none">
               Layout-Modus
@@ -605,7 +492,6 @@ function AutoToolsSection({
                 className="w-full flex flex-col items-start px-2.5 py-1.5 rounded hover:bg-lochcad-accent/20 transition-colors text-left"
                 onClick={() => {
                   handleAutoLayout(mode.id);
-                  setLayoutOpen(false);
                 }}
               >
                 <span className="text-xs text-gray-200 font-medium">{mode.label}</span>

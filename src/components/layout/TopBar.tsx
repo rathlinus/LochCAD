@@ -29,15 +29,6 @@ import {
   RotateCw,
   FlipHorizontal2,
   Trash2,
-  Copy,
-  Scissors,
-  ClipboardPaste,
-  ZoomIn,
-  ZoomOut,
-  Maximize,
-  Grid3X3,
-  Eye,
-  EyeOff,
   Layers,
   AlertTriangle,
   CheckCircle2,
@@ -46,11 +37,9 @@ import {
   Globe,
   RefreshCw,
   ArrowRight,
-  Settings,
   Info,
   Keyboard,
   HelpCircle,
-  X,
   Users,
   Share2,
   User,
@@ -389,16 +378,7 @@ export function TopBar() {
     setRenaming(false);
   }, [projectNameDraft]);
 
-  // ---- Keyboard shortcut for save ----
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key === 's') { e.preventDefault(); handleSave(); }
-      if (e.ctrlKey && e.key === 'n') { e.preventDefault(); newProject(); }
-      if (e.ctrlKey && e.key === 'o') { e.preventDefault(); handleOpenProjectManager(); }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [handleSave, newProject, handleOpenProjectManager]);
+  // Keyboard shortcuts for save/new/open are handled globally in App.tsx
 
   // ---- Menu Definitions ----
   const editorActive = isSchematic || isPerfboard;
@@ -448,8 +428,6 @@ export function TopBar() {
       items: [
         { label: 'Sync: Schaltplan → Lochraster', icon: <ArrowRight size={14} />, action: handleSyncSch2Pb },
         { label: 'Sync: Lochraster → Schaltplan', icon: <ArrowRight size={14} />, action: handleSyncPb2Sch },
-        { separator: true, label: '' },
-        { label: 'Netlist erstellen', icon: <Globe size={14} />, action: handleExportNetlist },
       ],
     },
     {
@@ -561,12 +539,15 @@ export function TopBar() {
         ))}
       </div>
 
-      {/* === Central View Tabs (absolute center) === */}
-      <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1 bg-lochcad-bg/40 rounded-lg px-1 py-0.5">
+      {/* Spacer */}
+      <div className="flex-1 min-w-0" />
+
+      {/* === Central View Tabs (flex, responsive) === */}
+      <div className="flex items-center gap-0.5 bg-lochcad-bg/40 rounded-lg px-0.5 py-0.5 shrink min-w-0 overflow-x-auto scrollbar-hide">
         {viewTabs.map((tab) => (
           <button
             key={tab.id}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all duration-150 ${
+            className={`flex items-center gap-1 px-2 lg:px-3 py-1 rounded-md text-xs font-medium transition-all duration-150 whitespace-nowrap shrink-0 ${
               currentView === tab.id
                 ? 'bg-lochcad-accent/20 text-lochcad-accent shadow-sm'
                 : 'text-lochcad-text-dim hover:text-lochcad-text hover:bg-lochcad-panel/30'
@@ -574,13 +555,13 @@ export function TopBar() {
             onClick={() => setCurrentView(tab.id)}
           >
             {tab.icon}
-            <span>{tab.label}</span>
+            <span className="hidden sm:inline">{tab.label}</span>
           </button>
         ))}
       </div>
 
       {/* Spacer */}
-      <div className="flex-1" />
+      <div className="flex-1 min-w-0" />
 
       {/* Collaboration */}
       <div className="flex items-center gap-2 mr-2">
@@ -620,12 +601,6 @@ export function TopBar() {
       <div className="flex items-center gap-0.5 mr-1">
         <button className="btn-icon" onClick={handleSave} data-tooltip="Speichern (Strg+S)">
           <Save size={15} />
-        </button>
-        <button className="btn-icon" onClick={handleUndo} data-tooltip="Rückgängig (Strg+Z)" disabled={!editorActive}>
-          <Undo2 size={15} />
-        </button>
-        <button className="btn-icon" onClick={handleRedo} data-tooltip="Wiederholen (Strg+Y)" disabled={!editorActive}>
-          <Redo2 size={15} />
         </button>
       </div>
 
