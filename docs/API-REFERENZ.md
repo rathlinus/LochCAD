@@ -8,6 +8,7 @@
 
 - [Typen](#typen)
 - [Stores](#stores)
+- [Collaboration](#collaboration)
 - [Engine-Module](#engine-module)
 - [Bauteil-Bibliothek](#bauteil-bibliothek)
 - [Export-Module](#export-module)
@@ -191,12 +192,118 @@ interface ProjectManagerStore {
   openProject(id: string): void;
   saveCurrentProject(): void;
   deleteProject(id: string): void;
+  duplicateProject(id: string): void;
+  renameProject(id: string, name: string): void;
   exportProject(id: string): void;
   importProjectFromFile(file: File): Promise<string | 'archive' | null>;
 }
 ```
 
+### `useCollabStore`
+
+Echtzeit-Zusammenarbeit.
+
+```typescript
+interface RemotePeer {
+  user: CollabUser;
+  awareness: AwarenessState;
+  lastSeen: number;
+}
+
+interface CollabStore {
+  connected: boolean;
+  roomId: string | null;
+  peers: Map<string, RemotePeer>;
+  shareDialogOpen: boolean;
+
+  createRoom(): string;
+  joinRoom(roomId: string): void;
+  leaveRoom(): void;
+  openShareDialog(tab?: 'create' | 'join'): void;
+  closeShareDialog(): void;
+}
+```
+
+### `useAuthStore`
+
+Benutzerprofile.
+
+```typescript
+interface UserProfile {
+  id: string;
+  displayName: string;
+  color: string;
+  email?: string;
+  createdAt: string;
+}
+
+interface AuthStore {
+  profile: UserProfile | null;
+  authModalOpen: boolean;
+
+  createProfile(name: string, color: string, email?: string): void;
+  updateProfile(updates: Partial<UserProfile>): void;
+  deleteProfile(): void;
+  openAuthModal(): void;
+  closeAuthModal(): void;
+  hasAccount(): boolean;
+}
+```
+
 ---
+
+## Collaboration
+
+Definiert in `src/lib/collab/`.
+
+### Protokoll (`protocol.ts`)
+
+```typescript
+interface CollabUser {
+  id: string;
+  displayName: string;
+  color: string;
+}
+
+interface AwarenessState {
+  cursor: { x: number; y: number } | null;
+  view: EditorView;
+  tool: string;
+  selection: string[];
+  activeSheetId: string;
+  drawing: boolean;
+}
+
+// Operationen für Entity-Sync
+interface EntityOp {
+  type: 'set' | 'delete';
+  path: string;   // z.B. 'schematic.components', 'perfboard.connections'
+  id: string;
+  data?: any;
+}
+```
+
+### Client (`client.ts`)
+
+```typescript
+class CollabClient {
+  connect(url: string, roomId: string, user: CollabUser): void;
+  disconnect(): void;
+  sendOps(ops: EntityOp[]): void;
+  sendAwareness(state: AwarenessState): void;
+  sendFullState(project: Project): void;
+  on(event: string, handler: Function): void;
+}
+```
+
+### Sync (`sync.ts`)
+
+```typescript
+function startSync(client: CollabClient): void;
+function stopSync(): void;
+```
+
+Die Sync-Engine erstellt Snapshots aller Entity-Pfade, vergleicht sie mit dem vorherigen Zustand, und sendet nur die Differenzen als Operationen.
 
 ## Engine-Module
 
@@ -208,20 +315,20 @@ Baut eine Netzliste aus den Schaltplan-Daten.
 function buildNetlist(schematic: Schematic): Netlist;
 ```
 
-### `runERC(schematic, netlist)`
+### `runERC(schematic)`
 
-Electrical Rules Check — gibt Fehler und Warnungen zurück.
+Electrical Rules Check — gibt Ergebnis mit Fehlern und Warnungen zurück.
 
 ```typescript
-function runERC(schematic: Schematic, netlist: Netlist): CheckResult[];
+function runERC(schematic: Schematic): ERCResult;
 ```
 
-### `runDRC(perfboard, netlist)`
+### `runDRC(perfboard, schematic)`
 
 Design Rules Check — prüft das Lochraster-Layout.
 
 ```typescript
-function runDRC(perfboard: Perfboard, netlist: Netlist): CheckResult[];
+function runDRC(perfboard: Perfboard, schematic: Schematic): DRCResult;
 ```
 
 ### `autoRoute(perfboard, netlist)`
@@ -289,6 +396,18 @@ Erzeugt eine Stückliste (Bill of Materials).
 ### `bomToCsv(bom)` / `bomToHtml(bom)`
 
 Konvertiert die Stückliste in CSV- bzw. HTML-Format.
+
+### `exportPerfboardPDF(perfboard, name, componentLibrary)`
+
+Erzeugt ein zweiseitiges Bestückungsplan-PDF (Bauteilseite + Lötseite gespiegelt).
+
+```typescript
+function exportPerfboardPDF(
+  perfboard: Perfboard,
+  name: string,
+  componentLibrary?: ComponentDefinition[]
+): { blobUrl: string; filename: string };
+```
 
 ---
 

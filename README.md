@@ -40,9 +40,12 @@
 | **Autorouter** | Automatisches Routen von Verbindungen auf dem Lochraster |
 | **Auto-Layout** | Automatische Bauteilplatzierung auf dem Lochraster |
 | **ERC / DRC** | Electrical & Design Rules Check für Schaltplan und Layout |
-| **Export** | `.lochcad`-Projekt, SPICE-Netzliste, Stückliste (CSV/HTML), Netzlisten-JSON |
+| **Echtzeit-Zusammenarbeit** | WebSocket-basiert: Räume erstellen/beitreten, Live-Cursor, Presence-Avatare, State-Sync |
+| **Benutzerprofile** | Profil mit Name und Farbe für die Zusammenarbeit |
+| **Export** | `.lochcad`-Projekt, SPICE-Netzliste, Stückliste (CSV/HTML), Netzlisten-JSON, Bestückungsplan-PDF |
 | **Projektmanager** | Mehrere Projekte verwalten, importieren, exportieren, archivieren |
-| **Offline-fähig** | Läuft komplett im Browser — keine Daten verlassen den Rechner |
+| **Projekt-Notizen** | Markdown-Notizen pro Projekt, exportierbar als `.md` |
+| **Offline-fähig** | Läuft komplett im Browser — keine Daten verlassen den Rechner (außer bei Zusammenarbeit) |
 
 ## Schnellstart
 
@@ -81,8 +84,11 @@ npm run preview
 ```
 LochCAD/
 ├── public/                  # Statische Assets (Logo, Icons)
+├── server/
+│   └── collab-server.cjs    # WebSocket Collaboration-Server (Node.js)
 ├── src/
 │   ├── components/          # React UI-Komponenten
+│   │   ├── collab/          #   Zusammenarbeit (ShareDialog, AuthModal, Presence, Cursors)
 │   │   ├── layout/          #   App-Layout, TopBar, Toolbar, StatusBar
 │   │   ├── properties/      #   Eigenschaften-Panel
 │   │   └── sidebar/         #   Bauteil-Bibliothek Sidebar
@@ -93,12 +99,13 @@ LochCAD/
 │   │   ├── preview-3d/         # 3D-Vorschau (Three.js / R3F)
 │   │   └── component-editor/   # Bauteil-Editor
 │   ├── lib/                 # Kernlogik
+│   │   ├── collab/          #   Collaboration-Protokoll, Client, Sync-Engine
 │   │   ├── engine/          #   Netlist, Router, Auto-Layout, ERC, DRC
-│   │   ├── export/          #   SPICE, BOM, Projektdatei
+│   │   ├── export/          #   SPICE, BOM, PDF, Projektdatei
 │   │   ├── component-library/  # Eingebaute Bauteilbibliothek
 │   │   ├── clipboard.ts     #   Copy/Paste-Logik
 │   │   └── units.ts         #   SI-Einheiten-Konvertierung
-│   ├── stores/              # Zustand State-Management
+│   ├── stores/              # Zustand State-Management (inkl. collabStore, authStore)
 │   └── types/               # TypeScript-Typdefinitionen
 ├── docs/                    # Dokumentation
 ├── nginx/                   # Nginx-Konfiguration (Deployment)
@@ -121,6 +128,9 @@ LochCAD/
 | [Three.js / @react-three/fiber](https://docs.pmnd.rs/react-three-fiber/) | 3D-Vorschau |
 | [Tailwind CSS](https://tailwindcss.com/) | Styling |
 | [Lucide Icons](https://lucide.dev/) | Icon-Set |
+| [jsPDF](https://github.com/parallax/jsPDF) | PDF-Generierung |
+| [JSZip](https://stuk.github.io/jszip/) | Projektdatei-Archiv (.lochcad) |
+| [ws](https://github.com/websockets/ws) | WebSocket (Collaboration-Server) |
 
 ---
 

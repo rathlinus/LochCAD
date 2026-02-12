@@ -15,7 +15,9 @@
 7. [Prüfungen (ERC / DRC)](#prüfungen-erc--drc)
 8. [Export-Funktionen](#export-funktionen)
 9. [Projektmanager](#projektmanager)
-10. [Tastenkürzel-Referenz](#tastenkürzel-referenz)
+10. [Zusammenarbeit (Collaboration)](#zusammenarbeit-collaboration)
+11. [Projekt-Notizen](#projekt-notizen)
+12. [Tastenkürzel-Referenz](#tastenkürzel-referenz)
 
 ---
 
@@ -32,7 +34,7 @@ Schaltplan zeichnen → Auf Lochraster übertragen → Routen → Prüfen → Ex
 - Moderner Browser (Chrome, Firefox, Edge, Safari)
 - Bildschirmauflösung ≥ 1280×720 empfohlen
 - Keine Installation nötig — läuft vollständig im Browser
-- Alle Daten bleiben lokal (LocalStorage)
+- Alle Daten bleiben lokal (LocalStorage) — außer bei Echtzeit-Zusammenarbeit
 
 ---
 
@@ -105,7 +107,7 @@ Hier überträgst du deine Schaltung auf eine reale Lochrasterplatine.
 
 ### Schaltplan synchronisieren
 
-1. Gehe zu **Werkzeuge → Sync Schaltplan → Lochraster**.
+1. Klicke in der Toolbar rechts auf **Sync** oder gehe zu **Werkzeuge → Sync Schaltplan → Lochraster**.
 2. Alle Bauteile werden auf das Board übertragen, ggf. noch unplatziert.
 
 ### Platinen-Einstellungen
@@ -187,11 +189,12 @@ Prüft das **Lochraster-Layout** auf:
 
 | Format | Beschreibung |
 |---|---|
-| `.lochcad` | Vollständiges Projektformat (JSON) — zum Teilen oder Sichern |
+| `.lochcad` | Vollständiges Projektformat (ZIP-Archiv) — zum Teilen oder Sichern |
 | **SPICE-Netzliste** | Für Schaltungssimulation (z.B. LTspice, ngspice) |
 | **Stückliste (CSV)** | Bauteil-Liste als CSV-Datei |
 | **Stückliste (HTML)** | Formatierte Bauteil-Liste als HTML-Tabelle |
 | **Netzliste (JSON)** | Strukturierte Netzliste im JSON-Format |
+| **Bestückungsplan (PDF)** | Zweiseitiges PDF: Bauteilseite + Lötseite (gespiegelt) |
 
 ---
 
@@ -204,6 +207,57 @@ Prüft das **Lochraster-Layout** auf:
 - Projekte **umbenennen** oder **löschen**
 - **Archiv exportieren** — alle Projekte als `.lochcad-archive` sichern
 - **Archiv importieren** — mehrere Projekte auf einmal laden
+
+---
+
+## Zusammenarbeit (Collaboration)
+
+LochCAD bietet Echtzeit-Zusammenarbeit über WebSocket. Mehrere Nutzer können gleichzeitig an einem Projekt arbeiten.
+
+### Voraussetzungen
+
+- **Benutzerprofil**: Vor der ersten Zusammenarbeit muss ein Profil erstellt werden (Name + Farbe). Klicke auf das Account-Symbol oben rechts.
+- **Collaboration-Server**: Ein WebSocket-Server muss laufen (siehe `server/collab-server.cjs`).
+
+### Raum erstellen
+
+1. Klicke auf **Teilen** in der TopBar.
+2. Im Share-Dialog wähle **Raum erstellen**.
+3. Die generierte Raum-ID wird angezeigt — teile sie mit anderen Teilnehmern.
+4. Die URL wird automatisch mit `?room=...` aktualisiert.
+
+### Raum beitreten
+
+1. Klicke auf **Teilen** in der TopBar.
+2. Im Share-Dialog wähle **Raum beitreten**.
+3. Gib die Raum-ID ein und bestätige.
+4. Dein lokales Projekt wird vor dem Beitritt automatisch gesichert und nach dem Verlassen wiederhergestellt.
+
+### Während der Zusammenarbeit
+
+| Feature | Beschreibung |
+|---|---|
+| **Presence-Avatare** | Farbige Kreise in der TopBar zeigen verbundene Teilnehmer |
+| **Remote-Cursor** | Cursor anderer Nutzer werden als farbige Pfeile auf dem Canvas angezeigt |
+| **Remote-Auswahl** | Von anderen Nutzern ausgewählte Elemente werden mit farbigem Rahmen markiert |
+| **Live-Sync** | Alle Änderungen (Bauteile, Drähte, Verbindungen) werden in Echtzeit synchronisiert |
+| **Awareness** | Aktiver View, Tool und Zeichenstatus werden übertragen |
+
+### Raum verlassen
+
+- Klicke auf den grünen **Live**-Button und wähle „Raum verlassen".
+- Dein vorheriges lokales Projekt wird automatisch wiederhergestellt.
+
+---
+
+## Projekt-Notizen
+
+Zu jedem Projekt können Markdown-Notizen hinterlegt werden:
+
+1. Öffne die **Projekt-Notizen** (über das Menü oder den Projektmanager).
+2. Schreibe Notizen im Markdown-Format.
+3. Notizen werden zusammen mit dem Projekt gespeichert.
+4. Export als `.md`-Datei möglich.
 
 ---
 
