@@ -34,7 +34,7 @@ export function PresenceAvatars() {
           style={{ backgroundColor: profile.color }}
           title={`${profile.displayName} (Du)`}
         >
-          {profile.displayName[0].toUpperCase()}
+          {(profile.displayName || '?')[0].toUpperCase()}
         </div>
       )}
 
@@ -48,7 +48,7 @@ export function PresenceAvatars() {
             style={{ backgroundColor: peer.user.color }}
             title={`${peer.user.name}${viewKey ? ` — ${viewLabels[viewKey] || viewKey}` : ''}`}
           >
-            {peer.user.name[0].toUpperCase()}
+            {(peer.user.name || '?')[0].toUpperCase()}
             {/* Activity indicator */}
             {peer.awareness.drawing && (
               <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 bg-green-400 rounded-full ring-1 ring-lochcad-surface animate-pulse" />

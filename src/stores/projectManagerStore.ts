@@ -110,7 +110,7 @@ interface ProjectManagerState {
   createProject: (name: string, description?: string, author?: string) => string;
   duplicateProject: (id: string) => string | null;
   deleteProject: (id: string) => void;
-  openProject: (id: string) => boolean;
+  openProject: (id: string, opts?: { skipSaveCurrent?: boolean }) => boolean;
   saveCurrentProject: () => void;
   renameProject: (id: string, name: string) => void;
   updateProjectMeta: (id: string, updates: Partial<Pick<ProjectListEntry, 'name' | 'description' | 'author' | 'tags'>>) => void;
@@ -204,9 +204,10 @@ export const useProjectManagerStore = create<ProjectManagerState>()((set, get) =
     }
   },
 
-  openProject: (id) => {
-    // Save current first
-    get().saveCurrentProject();
+  openProject: (id, opts) => {
+    // Save current first — unless the caller is discarding it (e.g. leaving a
+    // collab room, where the current project belongs to the room's host)
+    if (!opts?.skipSaveCurrent) get().saveCurrentProject();
 
     const proj = loadProjectData(id);
     if (!proj) return false;

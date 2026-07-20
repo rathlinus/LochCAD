@@ -57,7 +57,7 @@ export type ClientMessage =
 
 // ---- Server → Client ----
 export type ServerMessage =
-  | { type: 'joined'; roomId: string; userId: string; users: CollabUser[] }
+  | { type: 'joined'; roomId: string; userId: string; users: CollabUser[]; hasState?: boolean }
   | { type: 'state-full'; state: string }
   | { type: 'user-joined'; user: CollabUser }
   | { type: 'user-left'; userId: string }

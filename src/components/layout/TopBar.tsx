@@ -652,7 +652,7 @@ export function TopBar() {
             className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-bold"
             style={{ backgroundColor: useAuthStore.getState().profile!.color }}
           >
-            {useAuthStore.getState().profile!.displayName[0].toUpperCase()}
+            {(useAuthStore.getState().profile!.displayName || '?')[0].toUpperCase()}
           </div>
         ) : (
           <User size={15} />

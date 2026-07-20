@@ -44,6 +44,8 @@ interface CollabState {
 
 let _messageUnsub: (() => void) | null = null;
 let _awarenessInterval: ReturnType<typeof setInterval> | null = null;
+let _connectTimeout: ReturnType<typeof setTimeout> | null = null;
+let _lastSentAwareness: AwarenessState | null = null;
 /** Project ID the user had open before joining a room */
 let _preJoinProjectId: string | null = null;
 
@@ -69,12 +71,34 @@ export const useCollabStore = create<CollabState>((set, get) => ({
       return;
     }
 
-    // Save current local project before switching to collab state
-    const pmStore = useProjectManagerStore.getState();
-    pmStore.saveCurrentProject();
-    _preJoinProjectId = useProjectStore.getState().project.id;
+    const current = get();
+    if (current.roomId === roomId && (current.connected || current.connecting)) return;
+
+    if (current.roomId) {
+      // Switching rooms: tear down the old session, but keep the original
+      // pre-collab project reference — the project currently open belongs
+      // to the old room, not to the user.
+      collabClient.disconnect();
+      stopSync();
+      if (_messageUnsub) { _messageUnsub(); _messageUnsub = null; }
+      if (_awarenessInterval) { clearInterval(_awarenessInterval); _awarenessInterval = null; }
+      set({ connected: false, peers: new Map(), localAwareness: {} });
+    } else {
+      // Save current local project before switching to collab state
+      const pmStore = useProjectManagerStore.getState();
+      pmStore.saveCurrentProject();
+      _preJoinProjectId = useProjectStore.getState().project.id;
+    }
 
     set({ connecting: true, roomId });
+
+    // Unblock the share dialog if the server never answers. The client keeps
+    // retrying in the background; a late 'joined' still flips to connected.
+    if (_connectTimeout) clearTimeout(_connectTimeout);
+    _connectTimeout = setTimeout(() => {
+      _connectTimeout = null;
+      if (get().connecting) set({ connecting: false });
+    }, 15_000);
 
     // Listen for server messages
     if (_messageUnsub) _messageUnsub();
@@ -82,7 +106,10 @@ export const useCollabStore = create<CollabState>((set, get) => ({
       const state = get();
       switch (msg.type) {
         case 'joined': {
-          const newPeers = new Map(state.peers);
+          if (_connectTimeout) { clearTimeout(_connectTimeout); _connectTimeout = null; }
+          // Rebuild from the server's authoritative list — merging would keep
+          // ghost peers who left while we were disconnected
+          const newPeers = new Map<string, RemotePeer>();
           for (const u of msg.users) {
             newPeers.set(u.id, { user: u, awareness: {}, lastSeen: Date.now() });
           }
@@ -123,10 +150,14 @@ export const useCollabStore = create<CollabState>((set, get) => ({
     // Start state sync
     startSync();
 
-    // Start awareness broadcasting (20fps)
+    // Start awareness broadcasting (up to 20fps, only when it changed —
+    // updateLocalAwareness creates a new object, so identity is enough)
     if (_awarenessInterval) clearInterval(_awarenessInterval);
+    _lastSentAwareness = null;
     _awarenessInterval = setInterval(() => {
       const awareness = get().localAwareness;
+      if (awareness === _lastSentAwareness) return;
+      _lastSentAwareness = awareness;
       collabClient.sendAwareness(awareness);
     }, 50);
 
@@ -141,6 +172,8 @@ export const useCollabStore = create<CollabState>((set, get) => ({
     stopSync();
     if (_messageUnsub) { _messageUnsub(); _messageUnsub = null; }
     if (_awarenessInterval) { clearInterval(_awarenessInterval); _awarenessInterval = null; }
+    if (_connectTimeout) { clearTimeout(_connectTimeout); _connectTimeout = null; }
+    _lastSentAwareness = null;
 
     set({
       connected: false,
@@ -150,10 +183,13 @@ export const useCollabStore = create<CollabState>((set, get) => ({
       localAwareness: {},
     });
 
-    // Restore the user's own project
+    // Restore the user's own project. If the open project is the room's (we
+    // joined someone else's session), discard it instead of saving a copy of
+    // the host's project into the local project list.
     if (_preJoinProjectId) {
       const pmStore = useProjectManagerStore.getState();
-      pmStore.openProject(_preJoinProjectId);
+      const currentId = useProjectStore.getState().project.id;
+      pmStore.openProject(_preJoinProjectId, { skipSaveCurrent: currentId !== _preJoinProjectId });
       _preJoinProjectId = null;
     }
 

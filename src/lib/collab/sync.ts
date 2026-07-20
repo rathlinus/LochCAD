@@ -11,6 +11,7 @@ let _syncing = false;
 let _unsubStore: (() => void) | null = null;
 let _unsubWs: (() => void) | null = null;
 let _debounceTimer: ReturnType<typeof setTimeout> | null = null;
+let _initialStateTimer: ReturnType<typeof setTimeout> | null = null;
 
 // ---- Snapshot for diffing ----
 
@@ -101,44 +102,76 @@ function computeDiff(prev: Snapshot, curr: Snapshot): Operation[] {
 
 function applyRemoteOps(ops: Operation[]) {
   _syncing = true;
-  useProjectStore.setState((state) => {
-    for (const op of ops) {
-      if (op.path === 'meta') {
-        const metaOp = op as MetaOp;
-        (state.project as any)[metaOp.key] = metaOp.value;
-      } else if (op.path === 'config') {
-        const cfgOp = op as ConfigOp;
-        if (cfgOp.key === 'boardType') state.project.perfboard.boardType = cfgOp.value;
-        else if (cfgOp.key === 'boardWidth') state.project.perfboard.width = cfgOp.value;
-        else if (cfgOp.key === 'boardHeight') state.project.perfboard.height = cfgOp.value;
-      } else {
-        const entityOp = op as EntityOp;
-        const [section, collection] = entityOp.path.split('.') as [string, string];
-        const arr: any[] =
-          section === 'schematic'
-            ? (state.project.schematic as any)[collection]
-            : (state.project.perfboard as any)[collection];
-
-        if (entityOp.action === 'set' && entityOp.data) {
-          const data = JSON.parse(entityOp.data);
-          const idx = arr.findIndex((e: any) => e.id === entityOp.id);
-          if (idx >= 0) {
-            arr[idx] = data;
+  try {
+    useProjectStore.setState((state) => {
+      for (const op of ops) {
+        // A single malformed op must not abort the batch or leave sync stuck
+        try {
+          if (op.path === 'meta') {
+            const metaOp = op as MetaOp;
+            (state.project as any)[metaOp.key] = metaOp.value;
+          } else if (op.path === 'config') {
+            const cfgOp = op as ConfigOp;
+            if (cfgOp.key === 'boardType') state.project.perfboard.boardType = cfgOp.value;
+            else if (cfgOp.key === 'boardWidth') state.project.perfboard.width = cfgOp.value;
+            else if (cfgOp.key === 'boardHeight') state.project.perfboard.height = cfgOp.value;
           } else {
-            arr.push(data);
+            const entityOp = op as EntityOp;
+            const [section, collection] = entityOp.path.split('.') as [string, string];
+            const arr: any[] =
+              section === 'schematic'
+                ? (state.project.schematic as any)[collection]
+                : (state.project.perfboard as any)[collection];
+            if (!Array.isArray(arr)) continue;
+
+            if (entityOp.action === 'set' && entityOp.data) {
+              const data = JSON.parse(entityOp.data);
+              const idx = arr.findIndex((e: any) => e.id === entityOp.id);
+              if (idx >= 0) {
+                arr[idx] = data;
+              } else {
+                arr.push(data);
+              }
+            } else if (entityOp.action === 'delete') {
+              const idx = arr.findIndex((e: any) => e.id === entityOp.id);
+              if (idx >= 0) arr.splice(idx, 1);
+            }
           }
-        } else if (entityOp.action === 'delete') {
-          const idx = arr.findIndex((e: any) => e.id === entityOp.id);
-          if (idx >= 0) arr.splice(idx, 1);
+        } catch (err) {
+          console.error('[Collab] Skipping malformed op', op, err);
+        }
+      }
+      state.project.updatedAt = new Date().toISOString();
+    });
+
+    // Advance the diff baseline only for the remotely-changed entries.
+    // Recapturing the whole snapshot here would also absorb local edits
+    // still waiting in the debounce window, so they'd never be broadcast.
+    if (_prevSnapshot) {
+      for (const op of ops) {
+        try {
+          if (op.path === 'meta') {
+            _prevSnapshot.meta[(op as MetaOp).key] = (op as MetaOp).value;
+          } else if (op.path === 'config') {
+            _prevSnapshot.config[(op as ConfigOp).key] = (op as ConfigOp).value;
+          } else {
+            const entityOp = op as EntityOp;
+            const map = _prevSnapshot.entities.get(entityOp.path);
+            if (!map) continue;
+            if (entityOp.action === 'set' && entityOp.data) {
+              map.set(entityOp.id, JSON.stringify(JSON.parse(entityOp.data)));
+            } else if (entityOp.action === 'delete') {
+              map.delete(entityOp.id);
+            }
+          }
+        } catch {
+          // op was already skipped during apply
         }
       }
     }
-    state.project.updatedAt = new Date().toISOString();
-  });
-
-  // Update snapshot to prevent bounce
-  _prevSnapshot = captureSnapshot(useProjectStore.getState().project);
-  _syncing = false;
+  } finally {
+    _syncing = false;
+  }
 }
 
 // ---- Message handler ----
@@ -150,6 +183,12 @@ function handleServerMessage(msg: ServerMessage) {
       break;
 
     case 'state-full': {
+      // The room has canonical state — never overwrite it with our local
+      // project via a still-pending initial send.
+      if (_initialStateTimer) {
+        clearTimeout(_initialStateTimer);
+        _initialStateTimer = null;
+      }
       _syncing = true;
       try {
         const project = JSON.parse(msg.state) as Project;
@@ -157,19 +196,25 @@ function handleServerMessage(msg: ServerMessage) {
         _prevSnapshot = captureSnapshot(useProjectStore.getState().project);
       } catch {
         console.error('[Collab] Failed to parse full state');
+      } finally {
+        _syncing = false;
       }
-      _syncing = false;
       break;
     }
 
     case 'joined': {
-      // If we are the first user (no state received), send our state
-      // The server will tell us if there was existing state separately via state-full
-      const project = useProjectStore.getState().project;
-      // Always send our state after joining; server stores it for future joiners
-      setTimeout(() => {
-        collabClient.sendFullState(JSON.stringify(project));
-      }, 500);
+      if (_initialStateTimer) clearTimeout(_initialStateTimer);
+      _initialStateTimer = null;
+      // Seed the room only when the server has no state yet. The project is
+      // read inside the timeout — reading it here would capture the pre-join
+      // project and upload it over any room state applied in the meantime.
+      if (!msg.hasState) {
+        _initialStateTimer = setTimeout(() => {
+          _initialStateTimer = null;
+          const project = useProjectStore.getState().project;
+          collabClient.sendFullState(JSON.stringify(project));
+        }, 500);
+      }
       break;
     }
   }
@@ -179,6 +224,9 @@ function handleServerMessage(msg: ServerMessage) {
 
 /** Start syncing the project state with the collaboration server. */
 export function startSync() {
+  // Never stack subscriptions — a leaked store subscriber would keep
+  // pushing diffs after stopSync and replay them into the next room.
+  stopSync();
   const project = useProjectStore.getState().project;
   _prevSnapshot = captureSnapshot(project);
 
@@ -209,6 +257,7 @@ export function stopSync() {
   if (_unsubStore) { _unsubStore(); _unsubStore = null; }
   if (_unsubWs) { _unsubWs(); _unsubWs = null; }
   if (_debounceTimer) { clearTimeout(_debounceTimer); _debounceTimer = null; }
+  if (_initialStateTimer) { clearTimeout(_initialStateTimer); _initialStateTimer = null; }
   _prevSnapshot = null;
   _syncing = false;
 }

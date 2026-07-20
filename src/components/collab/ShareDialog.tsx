@@ -165,7 +165,7 @@ export function ShareDialog() {
                       className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold"
                       style={{ backgroundColor: profile.color }}
                     >
-                      {profile.displayName[0].toUpperCase()}
+                      {(profile.displayName || '?')[0].toUpperCase()}
                     </div>
                     <span className="text-xs text-lochcad-text font-medium flex-1">
                       {profile.displayName}
@@ -181,7 +181,7 @@ export function ShareDialog() {
                       className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold"
                       style={{ backgroundColor: peer.user.color }}
                     >
-                      {peer.user.name[0].toUpperCase()}
+                      {(peer.user.name || '?')[0].toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
                       <span className="text-xs text-lochcad-text font-medium block truncate">

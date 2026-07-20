@@ -33,22 +33,33 @@ export function CollabProvider() {
     if (joinedRef.current) return;
     const url = new URL(window.location.href);
     const roomId = url.searchParams.get('room');
-    if (roomId && profile) {
-      joinedRef.current = true;
+    if (!roomId) return;
+    joinedRef.current = true;
+    if (profile) {
       joinRoom(roomId);
-    } else if (roomId && !profile) {
-      // Need account first — open auth modal, then join on profile creation
-      joinedRef.current = true;
-      useAuthStore.getState().openAuthModal();
-      // Watch for profile creation
-      const unsub = useAuthStore.subscribe((state) => {
-        if (state.profile) {
-          unsub();
-          joinRoom(roomId);
-        }
-      });
+      return;
     }
+    // Need account first — open auth modal, then join on profile creation
+    useAuthStore.getState().openAuthModal();
+    const unsub = useAuthStore.subscribe((state) => {
+      if (state.profile) {
+        unsub();
+        joinRoom(roomId);
+      } else if (!state.isAuthModalOpen) {
+        // Modal dismissed without creating a profile — abandon the auto-join
+        // so a profile created later doesn't yank the user into this room
+        unsub();
+      }
+    });
+    return unsub;
   }, [profile]);
+
+  // A view switch changes the cursor's coordinate space (schematic: world px,
+  // perfboard: grid cells) — drop the last cursor so peers don't render it
+  // transformed into the wrong space until the next mouse move.
+  useEffect(() => {
+    updateLocalAwareness({ cursor: undefined });
+  }, [currentView]);
 
   // Broadcast local view/tool/drawing/selection awareness
   useEffect(() => {

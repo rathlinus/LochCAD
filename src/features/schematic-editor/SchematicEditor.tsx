@@ -1231,7 +1231,7 @@ export default function SchematicEditor() {
         <ERCOverlayLayer />
 
         {/* Remote collaboration cursors */}
-        <RemoteCursorsLayer viewFilter="schematic" viewportScale={viewport.scale} />
+        <RemoteCursorsLayer viewFilter="schematic" sheetFilter={activeSheetId} viewportScale={viewport.scale} />
       </Stage>
 
       {/* Tool hint overlay */}

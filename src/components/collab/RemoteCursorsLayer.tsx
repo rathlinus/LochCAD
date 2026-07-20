@@ -23,6 +23,8 @@ interface CursorEntry {
 interface RemoteCursorsLayerProps {
   /** Which view to filter peers by (e.g. 'schematic', 'perfboard') */
   viewFilter: string;
+  /** Only show peers on this sheet (omit for views without sheets) */
+  sheetFilter?: string;
   /** Current viewport scale — used to keep cursors a fixed visual size */
   viewportScale: number;
   /**
@@ -37,7 +39,7 @@ interface RemoteCursorsLayerProps {
 const ARROW_POINTS = [0, 0, 16, 10, 8, 11, 5, 20];
 
 export const RemoteCursorsLayer: React.FC<RemoteCursorsLayerProps> = React.memo(
-  ({ viewFilter, viewportScale, transformCursor }) => {
+  ({ viewFilter, sheetFilter, viewportScale, transformCursor }) => {
     const peers = useCollabStore((s) => s.peers);
     const connected = useCollabStore((s) => s.connected);
 
@@ -47,6 +49,7 @@ export const RemoteCursorsLayer: React.FC<RemoteCursorsLayerProps> = React.memo(
       for (const [id, peer] of peers) {
         const { awareness, user } = peer;
         if (!awareness.cursor || awareness.view !== viewFilter) continue;
+        if (sheetFilter && awareness.activeSheetId && awareness.activeSheetId !== sheetFilter) continue;
 
         let worldX = awareness.cursor.x;
         let worldY = awareness.cursor.y;
@@ -66,7 +69,7 @@ export const RemoteCursorsLayer: React.FC<RemoteCursorsLayerProps> = React.memo(
         });
       }
       return result;
-    }, [peers, connected, viewFilter, transformCursor]);
+    }, [peers, connected, viewFilter, sheetFilter, transformCursor]);
 
     if (cursors.length === 0) return null;
 

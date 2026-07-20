@@ -86,13 +86,14 @@ export function Toolbar() {
     ? (t: string) => setSchematicTool(t as ToolType)
     : (t: string) => setPerfboardTool(t as PerfboardToolType);
 
-  // Active viewport
-  const viewport = isSchematic
-    ? useSchematicStore.getState().viewport
-    : usePerfboardStore.getState().viewport;
-  const setViewport = isSchematic
-    ? useSchematicStore.getState().setViewport
-    : usePerfboardStore.getState().setViewport;
+  // Active viewport (reactive — getState() here would freeze the zoom label
+  // and make consecutive zoom clicks compute from a stale scale)
+  const schematicViewport = useSchematicStore((s) => s.viewport);
+  const perfboardViewport = usePerfboardStore((s) => s.viewport);
+  const setSchematicViewport = useSchematicStore((s) => s.setViewport);
+  const setPerfboardViewport = usePerfboardStore((s) => s.setViewport);
+  const viewport = isSchematic ? schematicViewport : perfboardViewport;
+  const setViewport = isSchematic ? setSchematicViewport : setPerfboardViewport;
 
   const handleAutoLayout = useCallback((mode?: AutoLayoutMode) => {
     usePerfboardStore.getState().autoLayoutComponents(mode);
@@ -130,7 +131,9 @@ export function Toolbar() {
 
 // ======== Overflow-aware toolbar layout ========
 
-type PopupId = 'sync' | 'more' | 'layout' | null;
+// 'more-layout' = layout-mode dropdown opened from inside the More popup —
+// a separate id so opening it doesn't close the More popup it lives in
+type PopupId = 'sync' | 'more' | 'layout' | 'more-layout' | null;
 
 interface ToolbarOverflowProps {
   isSchematic: boolean;
@@ -276,15 +279,18 @@ function ToolbarOverflow({
             handleAutoLayout={handleAutoLayout}
             handleAutoRoute={handleAutoRoute}
             handleRemoveAllConnections={handleRemoveAllConnections}
-            layoutOpen={openPopup === 'layout'}
-            onToggleLayout={() => togglePopup('layout')}
+            layoutOpen={openPopup === (inDropdown ? 'more-layout' : 'layout')}
+            onToggleLayout={() => setOpenPopup((prev) => inDropdown
+              ? (prev === 'more-layout' ? 'more' : 'more-layout')
+              : (prev === 'layout' ? null : 'layout'))}
+            onLayoutPicked={() => setOpenPopup(null)}
           />
         ),
       });
     }
 
     return s;
-  }, [grouped, activeTool, setTool, isSchematic, isPerfboard, viewport.scale, setViewport, handleAutoLayout, handleAutoRoute, handleRemoveAllConnections, openPopup, togglePopup]);
+  }, [grouped, activeTool, setTool, isSchematic, isPerfboard, viewport.scale, setViewport, handleAutoLayout, handleAutoRoute, handleRemoveAllConnections, openPopup, togglePopup, setOpenPopup]);
 
   const visibleSections = sections.slice(0, visibleCount);
   const overflowSections = sections.slice(visibleCount);
@@ -320,13 +326,13 @@ function ToolbarOverflow({
       {hasOverflow && (
         <div className="relative shrink-0 ml-1" data-toolbar-popup>
           <button
-            className={`btn-icon flex items-center gap-0.5 px-1.5 ${openPopup === 'more' ? 'bg-lochcad-panel/40' : ''}`}
+            className={`btn-icon flex items-center gap-0.5 px-1.5 ${openPopup === 'more' || openPopup === 'more-layout' ? 'bg-lochcad-panel/40' : ''}`}
             onClick={() => togglePopup('more')}
             data-tooltip="More tools"
           >
             <MoreHorizontal size={16} />
           </button>
-          {openPopup === 'more' && (
+          {(openPopup === 'more' || openPopup === 'more-layout') && (
             <div className="absolute top-full left-0 mt-1 z-[9990] bg-lochcad-surface border border-lochcad-panel/50 rounded-lg shadow-xl p-1.5 min-w-[180px]" data-toolbar-popup>
               {overflowSections.map((sec, i) => (
                 <React.Fragment key={sec.key}>
@@ -456,6 +462,7 @@ function AutoToolsSection({
   handleRemoveAllConnections,
   layoutOpen,
   onToggleLayout,
+  onLayoutPicked,
 }: {
   inDropdown: boolean;
   handleAutoLayout: (mode?: AutoLayoutMode) => void;
@@ -463,6 +470,7 @@ function AutoToolsSection({
   handleRemoveAllConnections: () => void;
   layoutOpen: boolean;
   onToggleLayout: () => void;
+  onLayoutPicked: () => void;
 }) {
   return (
     <div className={inDropdown ? 'flex flex-wrap gap-0.5 p-1' : 'flex items-center gap-0.5'}>
@@ -492,6 +500,7 @@ function AutoToolsSection({
                 className="w-full flex flex-col items-start px-2.5 py-1.5 rounded hover:bg-lochcad-accent/20 transition-colors text-left"
                 onClick={() => {
                   handleAutoLayout(mode.id);
+                  onLayoutPicked();
                 }}
               >
                 <span className="text-xs text-gray-200 font-medium">{mode.label}</span>
